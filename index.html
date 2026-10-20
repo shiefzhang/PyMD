@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>pyMD</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <!-- 自绘标题栏：菜单 + 窗口按钮。tauri.conf.json 里 decorations 必须是 false -->
+      <header id="titlebar">
+        <img class="titlebar-icon" id="titlebar-icon" alt="" draggable="false" />
+        <nav class="menubar" id="menubar"></nav>
+        <div class="app-title" id="app-title">pyMD</div>
+        <div class="window-actions">
+          <button type="button" class="win-btn" id="win-min" aria-label="最小化" title="最小化">
+            <svg class="win-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 11.5h9" /></svg>
+          </button>
+          <button type="button" class="win-btn" id="win-max" aria-label="最大化" title="最大化">
+            <svg class="win-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="4.5" y="4.5" width="7" height="7" /></svg>
+          </button>
+          <button type="button" class="win-btn close" id="win-close" aria-label="关闭" title="关闭">
+            <svg class="win-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7" /></svg>
+          </button>
+        </div>
+      </header>
+
+      <header id="toolbar">
+        <div class="group">
+          <button id="btn-sidebar" class="icon-btn" title="侧边栏 (Ctrl+B)" aria-pressed="true">☰</button>
+          <button id="btn-outline" class="icon-btn" title="文档目录 (Ctrl+Shift+O)" aria-pressed="true">目录</button>
+        </div>
+        <div class="group">
+          <button id="btn-new" title="新建 (Ctrl+N)">新建</button>
+          <button id="btn-open" title="打开 (Ctrl+O)">打开</button>
+          <button id="btn-save" title="保存 (Ctrl+S)">保存</button>
+          <button id="btn-save-as" title="另存为 (Ctrl+Shift+S)">另存为</button>
+        </div>
+        <div class="group">
+          <button id="btn-find" title="查找 (Ctrl+F)">查找</button>
+          <button id="btn-replace" title="替换 (Ctrl+H)">替换</button>
+        </div>
+        <!-- 视图模式切换：跟在「查找 替换」右边，和相邻功能组同样是一块胶囊 -->
+        <nav id="tabbar" class="group" role="tablist" aria-label="视图模式">
+          <button class="tab" role="tab" data-view="edit" title="纯源码编辑 (Ctrl+1)">编辑</button>
+          <button class="tab" role="tab" data-view="split" title="左侧编辑 + 右侧预览 (Ctrl+2)">分屏</button>
+          <button class="tab" role="tab" data-view="preview" title="纯预览 (Ctrl+3)">预览</button>
+        </nav>
+        <span class="spacer"></span>
+        <div class="group">
+          <label class="switch" title="段内单个换行也换行（comrak 的 render.hardbreaks）">
+            <input type="checkbox" id="chk-hardbreaks" />
+            <span>硬换行</span>
+          </label>
+        </div>
+        <div class="group">
+          <button id="btn-theme" title="切换明暗主题">主题</button>
+        </div>
+      </header>
+
+      <!-- 查找/替换条：查找模式下隐藏替换行 -->
+      <div id="findbar" class="findbar" hidden>
+        <div class="fb-field">
+          <input id="find-input" class="fb-input" placeholder="查找…" spellcheck="false" autocomplete="off" />
+          <button type="button" id="find-next" class="fb-btn">查找下一个</button>
+        </div>
+        <div class="fb-field" id="replace-field" hidden>
+          <input id="replace-input" class="fb-input" placeholder="替换为…" spellcheck="false" autocomplete="off" />
+          <button type="button" id="replace-one" class="fb-btn">替换</button>
+          <button type="button" id="replace-all" class="fb-btn">全部替换</button>
+        </div>
+        <span id="find-status" class="fb-status"></span>
+        <button type="button" id="find-close" class="fb-close" aria-label="关闭查找栏" title="关闭 (Esc)">×</button>
+      </div>
+
+      <main id="main">
+        <aside id="sidebar">
+          <section class="side-section">
+            <button class="side-title" id="dir-title" aria-expanded="true">
+              当前目录<span class="side-count" id="dir-count">0</span>
+            </button>
+            <div class="file-list" id="dir-list"></div>
+          </section>
+          <section class="side-section">
+            <button class="side-title" id="recent-title" aria-expanded="true">
+              最近打开<span class="side-count" id="recent-count">0</span>
+            </button>
+            <div class="file-list" id="recent-list"></div>
+          </section>
+          <div class="side-hint">
+            拖入 .md / .txt 即可打开。<br />Ctrl+B 收起侧边栏。
+          </div>
+        </aside>
+
+        <section id="workspace">
+          <!-- 多文件：每个标签持有独立的 EditorState（缓冲 / 撤销栈 / 选区） -->
+          <div id="docbar">
+            <nav id="doctabs" role="tablist" aria-label="打开的文件"></nav>
+            <button type="button" id="tab-new" title="新建标签 (Ctrl+N)" aria-label="新建标签">+</button>
+            <span class="docbar-fill"></span>
+          </div>
+
+          <div id="panes">
+            <section class="pane" id="editor-pane" data-view="edit"></section>
+            <div id="divider" title="拖动调整比例"></div>
+            <section class="pane" id="preview-pane" data-view="preview" hidden>
+              <article id="preview" class="markdown-body"></article>
+            </section>
+
+            <!-- 文档目录（大纲）：点击跳到对应标题 -->
+            <aside id="outline-pane" aria-label="文档目录">
+              <div class="outline-head">
+                <span>目录</span>
+                <span class="side-count" id="outline-count">0</span>
+                <button type="button" id="outline-close" class="outline-close" aria-label="收起目录" title="收起目录">×</button>
+              </div>
+              <div id="outline-list" class="outline-list"></div>
+            </aside>
+          </div>
+        </section>
+      </main>
+
+      <footer id="statusbar">
+        <span id="status-path">未打开文件</span>
+        <span class="spacer"></span>
+        <span id="status-dirty"></span>
+        <span id="status-stat"></span>
+      </footer>
+    </div>
+
+    <!-- 右键菜单（编辑菜单的浮出版） -->
+    <div id="ctxmenu" class="ctx-menu" role="menu" hidden></div>
+
+    <!-- 关于 / 快捷键说明 -->
+    <dialog id="info-dialog">
+      <h3 id="info-title"></h3>
+      <div id="info-body"></div>
+      <form method="dialog"><button>知道了</button></form>
+    </dialog>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

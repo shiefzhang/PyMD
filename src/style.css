@@ -1,0 +1,870 @@
+/* ---------------------------------------------------------------
+   pyMD 主题变量。所有颜色都集中在这里，明暗主题靠 data-theme 切换。
+   --------------------------------------------------------------- */
+:root {
+  --bg: #ffffff;
+  --bg-bar: #f6f5f2;
+  --text: #1f1f1f;
+  --text-dim: #6f6b64;
+  --border: rgba(0, 0, 0, 0.12);
+  --accent: #534ab7;
+  --accent-soft: rgba(83, 74, 183, 0.12);
+  --code-bg: #f1efe8;
+  --mark: rgba(239, 159, 39, 0.4);
+  --shadow: 0 6px 18px rgba(0, 0, 0, 0.14);
+
+  /* 工具栏分组胶囊：底色只比 --bg-bar 深一点点，靠边界分隔而不是靠花哨配色 */
+  --group-bg: rgba(0, 0, 0, 0.045);
+  --group-ring: rgba(0, 0, 0, 0.055);
+  --group-active: rgba(83, 74, 183, 0.11);
+
+  /* 正文/编辑器字号，由「查看 → 放大字体」改写 */
+  --fs: 14px;
+
+  /* Markdown 语法高亮（编辑器侧） */
+  --md-heading: #3c3489;
+  --md-link: #185fa5;
+  --md-code: #993c1d;
+  --md-quote: #0f6e56;
+  --md-list: #ba7517;
+}
+
+html[data-theme="dark"] {
+  --bg: #1c1b1a;
+  --bg-bar: #242322;
+  --text: #e8e6e3;
+  --text-dim: #9a968f;
+  --border: rgba(255, 255, 255, 0.14);
+  --accent: #afa9ec;
+  --accent-soft: rgba(175, 169, 236, 0.16);
+  --code-bg: #2c2c2a;
+  --mark: rgba(239, 159, 39, 0.3);
+  --shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+
+  --group-bg: rgba(255, 255, 255, 0.055);
+  --group-ring: rgba(255, 255, 255, 0.06);
+  --group-active: rgba(175, 169, 236, 0.16);
+
+  --md-heading: #cecbf6;
+  --md-link: #85b7eb;
+  --md-code: #f0997b;
+  --md-quote: #5dcaa5;
+  --md-list: #ef9f27;
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+
+body {
+  font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--bg);
+  overflow: hidden;
+}
+
+#app { display: flex; flex-direction: column; height: 100vh; }
+
+/* ------------------------------ 标题栏 ------------------------------ */
+/* decorations:false，所以整条标题栏都要自己画：菜单 + 窗口按钮 + 拖动区 */
+#titlebar {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  height: 34px;
+  /* 菜单顶格：不留给应用名的左边距 */
+  padding-left: 0;
+  background: var(--bg-bar);
+  border-bottom: 1px solid var(--border);
+  user-select: none;
+  position: relative;
+  z-index: 50;
+}
+
+/* 左上角 app 图标：在菜单左边，点击时穿透到标题栏参与拖动。
+   不加 outline / box-shadow —— 图标自身带米色底和边缘，再套一圈环会显出「双框」。 */
+.titlebar-icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  margin: 0 2px 0 9px;
+  border-radius: 3px;
+  pointer-events: none;
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
+/* 文件名排在菜单右边，用一条竖线跟菜单分开 */
+.app-title {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-left: 6px;
+  padding-left: 12px;
+  border-left: 1px solid var(--border);
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.menubar { display: flex; align-items: center; height: 100%; }
+
+.dropdown { position: relative; display: flex; align-items: center; height: 100%; }
+
+.dropdown-trigger {
+  height: 24px;
+  padding: 0 10px;
+  font-size: 13px;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+}
+.dropdown-trigger:hover,
+.dropdown.open .dropdown-trigger {
+  background: var(--accent-soft);
+  border-color: transparent;
+}
+
+.dropdown-list {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  min-width: 208px;
+  padding: 4px 0;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: var(--shadow);
+  z-index: 1000;
+}
+.dropdown-list[hidden] { display: none; }
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  width: 100%;
+  padding: 5px 14px;
+  font-size: 12.5px;
+  color: var(--text);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  white-space: nowrap;
+}
+.dropdown-item:hover { background: var(--accent-soft); border-color: transparent; }
+.dropdown-item:disabled { color: var(--text-dim); opacity: 0.55; }
+.dropdown-item:disabled:hover { background: transparent; }
+
+.dropdown-shortcut { color: var(--text-dim); font-size: 11px; }
+
+.dropdown-sep { height: 1px; margin: 4px 8px; background: var(--border); }
+
+.window-actions { display: flex; margin-left: auto; height: 100%; }
+
+.win-btn {
+  width: 46px;
+  height: 100%;
+  padding: 0;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.win-btn:hover { background: var(--accent-soft); border-color: transparent; }
+.win-btn.close:hover { background: #e81123; color: #fff; }
+
+.win-icon {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  stroke-width: 1.35;
+  fill: none;
+  stroke-linecap: square;
+  pointer-events: none;
+}
+
+/* ------------------------------ 工具栏 ------------------------------ */
+#toolbar {
+  display: flex;
+  align-items: center;
+  /* 胶囊之间 10px；上下 padding 让出胶囊自带的 2px，整体高度与改动前一致 */
+  gap: 10px;
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  background: var(--bg-bar);
+  border-bottom: 1px solid var(--border);
+}
+
+/* 每个功能组做成一块浅色胶囊，边界由底色自己划出来，不靠额外分隔线 */
+.group {
+  display: flex;
+  gap: 4px;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--group-bg);
+  box-shadow: inset 0 0 0 1px var(--group-ring);
+}
+.spacer { flex: 1; }
+
+/* 胶囊里的按钮去掉各自的边框和底色，避免与分组底色叠成「边框套边框」 */
+#toolbar .group button {
+  background: transparent;
+  border-color: transparent;
+  border-radius: 6px;
+}
+#toolbar .group button:hover {
+  background: var(--accent-soft);
+  border-color: transparent;
+}
+/* 侧边栏 / 目录这类开关按钮，按下时靠淡底色 + 字色标出来（整块压深会盖过分组本身） */
+#toolbar .group .icon-btn[aria-pressed="true"] {
+  background: var(--group-active);
+  color: var(--accent);
+  font-weight: 500;
+}
+
+/* 工具栏里的勾选项：外框和按钮一样是 24px 高、6px 圆角的可点区域 */
+#toolbar .switch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px 0 8px;
+  font-size: 13px;
+  color: var(--text);
+  border-radius: 6px;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+#toolbar .switch:hover { background: var(--accent-soft); }
+#toolbar .switch input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+button {
+  font: inherit;
+  font-size: 13px;
+  padding: 4px 10px;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+button:hover { background: var(--accent-soft); border-color: var(--accent); }
+button:active { transform: translateY(1px); }
+
+/* --------------------------- 视图模式切换 --------------------------- */
+/* 已并进工具栏，不再自带底色和下边框，靠 .group 的胶囊划边界。
+   选中态跟「侧边栏 / 目录」这类开关保持一致：淡 accent 底 + accent 字，
+   不再用下划线，否则一块胶囊里既有下划线又有底色会显得脏。
+   min-width 固定住，避免选中时 font-weight 变 500 导致三个按钮横向跳动。 */
+#tabbar { gap: 2px; }
+
+.tab {
+  min-width: 56px;
+  padding: 4px 12px;
+  font-size: 13px;
+  text-align: center;
+  color: var(--text-dim);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+}
+/* 选择器必须带 #toolbar .group 才压得住上面 `#toolbar .group button` 的
+   transparent 底色，否则选中态会被刷回透明 */
+#toolbar .group .tab:hover {
+  color: var(--text);
+  background: var(--accent-soft);
+}
+#toolbar .group .tab[aria-selected="true"] {
+  color: var(--accent);
+  font-weight: 500;
+  background: var(--group-active);
+}
+
+/* ---------------------------- 文件标签条 ---------------------------- */
+/* 多文件：每个标签是一份独立的 EditorState，切换时整体换 state */
+#docbar {
+  display: flex;
+  align-items: stretch;
+  flex: 0 0 auto;
+  min-height: 30px;
+  background: var(--bg-bar);
+  border-bottom: 1px solid var(--border);
+}
+#doctabs {
+  display: flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: calc(100% - 30px);
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.docbar-fill { flex: 1 1 auto; }
+#doctabs::-webkit-scrollbar { height: 3px; }
+#doctabs::-webkit-scrollbar-thumb { background: var(--border); }
+
+.doc-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 190px;
+  height: 30px;
+  padding: 0 4px 0 12px;
+  font-size: 12.5px;
+  color: var(--text-dim);
+  background: transparent;
+  border: 0;
+  border-right: 1px solid var(--border);
+  border-radius: 0;
+  cursor: pointer;
+  user-select: none;
+}
+.doc-tab[hidden] { display: none; }
+.doc-tab:hover { color: var(--text); background: var(--accent-soft); border-color: var(--border); }
+.doc-tab[aria-selected="true"] {
+  color: var(--text);
+  background: var(--bg);
+  box-shadow: inset 0 2px 0 var(--accent);
+  border-color: var(--border);
+}
+.doc-tab-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.doc-tab-dirty {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.doc-tab-dirty[hidden] { display: none; }
+
+.doc-tab-close {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--text-dim);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  opacity: 0;
+}
+.doc-tab:hover .doc-tab-close,
+.doc-tab[aria-selected="true"] .doc-tab-close { opacity: 1; }
+.doc-tab-close:hover { color: var(--text); background: var(--code-bg); border-color: transparent; }
+
+#tab-new {
+  flex: 0 0 auto;
+  width: 30px;
+  padding: 0;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--text-dim);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+#tab-new:hover { color: var(--accent); background: var(--accent-soft); border-color: transparent; }
+
+/* ---------------------------- 查找/替换条 ---------------------------- */
+.findbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  flex: 0 0 auto;
+  padding: 6px 12px;
+  background: var(--bg-bar);
+  border-bottom: 1px solid var(--border);
+}
+.findbar[hidden] { display: none; }
+
+.fb-field { display: flex; align-items: center; gap: 4px; }
+.fb-field[hidden] { display: none; }
+
+.fb-input {
+  width: 180px;
+  height: 26px;
+  padding: 0 8px;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  outline: none;
+}
+.fb-input:focus { border-color: var(--accent); }
+
+.fb-btn {
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12.5px;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+}
+
+.fb-status { font-size: 12px; color: var(--text-dim); }
+
+.fb-close {
+  margin-left: auto;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--text-dim);
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+}
+.fb-close:hover { color: var(--text); background: var(--accent-soft); border-color: transparent; }
+
+/* ---------------------------- 右键菜单 ---------------------------- */
+.ctx-menu {
+  position: fixed;
+  min-width: 168px;
+  padding: 4px 0;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: var(--shadow);
+  z-index: 2000;
+}
+.ctx-menu[hidden] { display: none; }
+.ctx-menu .dropdown-item { padding: 5px 14px; }
+
+/* ---------------------------- 主区域布局 ---------------------------- */
+/* 横向：侧边栏 | 工作区 */
+#main { display: flex; flex: 1 1 auto; min-height: 0; }
+
+/* 工作区内部：上面标签条，下面 编辑 | 分隔条 | 预览 | 目录 */
+#workspace {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+#panes { display: flex; flex: 1 1 auto; min-width: 0; min-height: 0; }
+#panes > .pane { flex: 1 1 auto; min-width: 0; }
+/* hidden 属性要被优先尊重（不然 flex 会让它照样占位） */
+#panes > .pane[hidden] { display: none; }
+#editor-pane { overflow: hidden; }
+#preview-pane { overflow: auto; }
+
+/* ------------------------------ 目录 ------------------------------ */
+#outline-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 216px;
+  width: 216px;
+  min-height: 0;
+  background: var(--bg-bar);
+  border-left: 1px solid var(--border);
+}
+#outline-pane[hidden] { display: none; }
+
+.outline-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  height: 28px;
+  padding: 0 4px 0 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+}
+.outline-close {
+  margin-left: auto;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--text-dim);
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  opacity: 0.7;
+}
+.outline-close:hover { color: var(--text); background: var(--code-bg); border-color: transparent; }
+
+.outline-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 4px 12px;
+}
+
+.outline-item {
+  display: block;
+  width: 100%;
+  padding: 3px 8px;
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.outline-item:hover { background: var(--accent-soft); border-color: transparent; }
+.outline-item.active { color: var(--accent); background: var(--accent-soft); }
+.outline-item.lv1 { font-weight: 600; }
+.outline-empty {
+  padding: 8px 10px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--text-dim);
+}
+
+#divider {
+  flex: 0 0 3px;
+  cursor: col-resize;
+  background: var(--border);
+  transition: background 120ms;
+}
+#divider:hover { background: var(--accent); }
+#divider[hidden] { display: none; }
+
+/* ------------------------------ 侧边栏 ------------------------------ */
+#sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 0 0 232px;
+  width: 232px;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 6px 4px 10px;
+  background: var(--bg-bar);
+  border-right: 1px solid var(--border);
+}
+#sidebar[hidden] { display: none; }
+
+/* 分组不允许被压缩：列表长起来时由 #sidebar 自己滚动，
+   一旦让 .side-section 收缩，列表就会溢出、压到下一个分组的文字上 */
+.side-section { display: flex; flex-direction: column; flex: 0 0 auto; min-height: 0; }
+
+.side-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-dim);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.side-title:hover { color: var(--text); background: var(--accent-soft); border-color: transparent; }
+/* 折叠箭头 */
+.side-title::before {
+  content: "▸";
+  display: inline-block;
+  font-size: 10px;
+  transition: transform 120ms;
+}
+.side-title[aria-expanded="true"]::before { transform: rotate(90deg); }
+
+.side-count {
+  margin-left: auto;
+  padding: 0 5px;
+  font-size: 11px;
+  color: var(--text-dim);
+  background: var(--accent-soft);
+  border-radius: 8px;
+}
+
+.file-list { display: flex; flex-direction: column; gap: 1px; }
+.file-list[hidden] { display: none; }
+
+.file-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--text);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.file-item:hover { background: var(--accent-soft); border-color: transparent; }
+.file-item.active { background: var(--accent-soft); color: var(--accent); }
+
+.file-icon {
+  flex: 0 0 auto;
+  min-width: 26px;
+  padding: 1px 3px;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-dim);
+  text-align: center;
+  background: var(--code-bg);
+  border-radius: 3px;
+}
+.file-item.active .file-icon { color: var(--accent); }
+
+.file-name {
+  /* min-width:0 让超长文件名真的能被挤压出省略号，而不是把整行顶宽 */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.side-hint {
+  padding: 8px 10px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--text-dim);
+}
+
+.icon-btn { padding: 4px 8px; font-size: 14px; line-height: 1; }
+.icon-btn[aria-pressed="false"] { color: var(--text-dim); border-color: transparent; }
+
+/* ----------------------------- 状态栏 ----------------------------- */
+#statusbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 0 0 auto;
+  padding: 3px 10px;
+  font-size: 12px;
+  color: var(--text-dim);
+  background: var(--bg-bar);
+  border-top: 1px solid var(--border);
+}
+#status-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60%; }
+#status-dirty { color: var(--accent); }
+
+/* --------------------------- CodeMirror --------------------------- */
+#editor-pane .cm-editor { height: 100%; background: var(--bg); color: var(--text); }
+.cm-editor.cm-focused { outline: none; }
+.cm-scroller {
+  font-family: "Cascadia Code", Consolas, "Courier New", monospace;
+  font-size: var(--fs);
+  line-height: 1.7;
+}
+.cm-gutters {
+  background: var(--bg-bar);
+  color: var(--text-dim);
+  border-right: 1px solid var(--border);
+}
+.cm-activeLine { background: var(--accent-soft); }
+.cm-activeLineGutter { background: var(--accent-soft); }
+.cm-content ::selection,
+.cm-selectionBackground { background: var(--accent-soft) !important; }
+.cm-cursor { border-left-color: var(--accent) !important; }
+/* CodeMirror 自带的 baseTheme 带一层作用域前缀，特异性比这里高，
+   所以下面这几条必须 !important，否则会露出它默认的荧光绿 */
+.cm-selectionMatch { background: var(--mark) !important; }
+/* 查找命中：全部匹配淡色底，当前这一处加一圈描边（装饰由 editor.ts 的 findHighlighter 画） */
+.cm-pyFind { background: var(--mark) !important; border-radius: 2px; }
+.cm-pyFind-active {
+  background: var(--accent-soft) !important;
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+/* --------------------------- 预览区排版 --------------------------- */
+.markdown-body {
+  max-width: 46em;
+  margin: 0 auto;
+  padding: 28px 32px 140px;
+  font-size: var(--fs);
+  line-height: 1.75;
+  word-wrap: break-word;
+}
+.markdown-body > *:first-child { margin-top: 0; }
+
+.markdown-body h1,
+.markdown-body h2,
+.markdown-body h3,
+.markdown-body h4,
+.markdown-body h5,
+.markdown-body h6 {
+  margin: 1.6em 0 0.6em;
+  font-weight: 500;
+  line-height: 1.3;
+}
+.markdown-body h1 { font-size: 1.75em; padding-bottom: 0.3em; border-bottom: 1px solid var(--border); }
+.markdown-body h2 { font-size: 1.4em; padding-bottom: 0.25em; border-bottom: 1px solid var(--border); }
+.markdown-body h3 { font-size: 1.2em; }
+.markdown-body h4 { font-size: 1.05em; }
+.markdown-body h5,
+.markdown-body h6 { font-size: 1em; color: var(--text-dim); }
+
+.markdown-body p,
+.markdown-body ul,
+.markdown-body ol,
+.markdown-body blockquote,
+.markdown-body table,
+.markdown-body pre { margin: 0 0 1em; }
+
+.markdown-body ul,
+.markdown-body ol { padding-left: 1.6em; }
+.markdown-body li { margin: 0.25em 0; }
+.markdown-body li > ul,
+.markdown-body li > ol { margin: 0.25em 0; }
+
+.markdown-body a { color: var(--md-link); text-decoration: none; }
+.markdown-body a:hover { text-decoration: underline; }
+
+.markdown-body blockquote {
+  padding: 0.2em 1em;
+  color: var(--text-dim);
+  border-left: 3px solid var(--md-quote);
+  background: var(--accent-soft);
+  border-radius: 0 6px 6px 0;
+}
+
+.markdown-body code {
+  padding: 0.15em 0.4em;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 0.9em;
+  color: var(--md-code);
+  background: var(--code-bg);
+  border-radius: 4px;
+}
+.markdown-body pre {
+  padding: 14px 16px;
+  overflow: auto;
+  background: var(--code-bg);
+  border-radius: 8px;
+}
+.markdown-body pre code { padding: 0; color: var(--text); background: none; }
+
+.markdown-body table { border-collapse: collapse; display: block; overflow: auto; }
+.markdown-body th,
+.markdown-body td { padding: 6px 13px; border: 1px solid var(--border); }
+.markdown-body th { font-weight: 500; background: var(--bg-bar); }
+
+.markdown-body hr { height: 1px; margin: 2em 0; background: var(--border); border: 0; }
+.markdown-body img { max-width: 100%; }
+
+.markdown-body input[type="checkbox"] { margin-right: 0.4em; }
+.markdown-body .task-list-item { list-style: none; margin-left: -1.4em; }
+
+/* ---------------------------- KaTeX 公式 ---------------------------- */
+/* 行内公式不撑大行高，避免中文正文被顶开 */
+.math-inline { display: inline-block; vertical-align: baseline; }
+/* 块级公式：横向可滚，防止长公式把整页撑出横向滚动条 */
+.math-display {
+  display: block;
+  margin: 1em 0;
+  padding: 2px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  text-align: center;
+}
+.math-display .katex-display { margin: 0; }
+/* 语法错误的公式：KaTeX 用 errorColor 标红，这里再加个淡底便于发现 */
+.katex .katex-error { background: rgba(207, 34, 46, 0.08); border-radius: 3px; }
+
+/* --------------------------- 关于/快捷键 --------------------------- */
+#info-dialog {
+  width: min(460px, 82vw);
+  padding: 18px 22px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+#info-dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
+#info-dialog h3 { margin: 0 0 12px; font-size: 14px; font-weight: 600; }
+#info-body { font-size: 13px; line-height: 1.8; white-space: pre-wrap; }
+#info-dialog form { margin-top: 16px; text-align: right; }
+
+/* 「关于」用的是结构化排版，不能继承 #info-body 的 pre-wrap */
+#info-body.about-body { white-space: normal; }
+.about { display: flex; flex-direction: column; gap: 8px; }
+.about-head { display: flex; align-items: center; gap: 12px; }
+.about-logo {
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  flex: 0 0 auto;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  user-select: none;
+}
+.about-titles { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.about-name { font-size: 17px; font-weight: 650; letter-spacing: 0.3px; }
+.about-ver {
+  font-size: 11px;
+  line-height: 1.5;
+  padding: 0 6px;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+.about-text { margin: 0; font-size: 13px; line-height: 1.7; color: var(--text); }
+.about-text + .about-text { margin-top: -2px; }
+.about-rule { margin: 4px 0 2px; border: 0; border-top: 1px solid var(--border); }
+.about-meta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 14px;
+  margin: 0;
+  font-size: 13px;
+}
+.about-meta dt { color: var(--text-dim); }
+.about-meta dd { margin: 0; }
+.about-mail-row { display: flex; align-items: center; gap: 8px; }
+.about-mail {
+  font-family: Consolas, "Cascadia Mono", ui-monospace, monospace;
+  font-size: 12.5px;
+  user-select: text;
+}
+.about-copy {
+  font-size: 11px;
+  line-height: 1.5;
+  padding: 1px 8px;
+  color: var(--text-dim);
+}
+.about-copy.done { color: var(--accent); border-color: var(--accent); }
+.about-copyright { margin: 2px 0 0; font-size: 12px; color: var(--text); }
+.about-dim { margin: 0; font-size: 12px; line-height: 1.6; color: var(--text-dim); }

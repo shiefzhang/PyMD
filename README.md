@@ -1,0 +1,214 @@
+# pyMD
+
+**用 Tauri 2 + CodeMirror 6 写的 Markdown 编辑器**：单文件约 6 MB，Markdown 渲染、目录提取、文件读写、文件监听全部在 Rust 侧完成，前端只负责编辑和显示。
+
+<p>
+  <img alt="Tauri 2.12" src="https://img.shields.io/badge/Tauri-2.12-24C8DB?logo=tauri&logoColor=white">
+  <img alt="CodeMirror 6" src="https://img.shields.io/badge/CodeMirror-6-B98CFF">
+  <img alt="comrak" src="https://img.shields.io/badge/render-comrak-orange">
+  <img alt="Windows" src="https://img.shields.io/badge/platform-Windows%2010%2F11-0078D4">
+</p>
+
+![pyMD 分屏视图](docs/screenshots/split-light.png)
+
+---
+
+## 特性
+
+**编辑**
+
+- 三种视图：纯源码 / 左右分屏 / 纯预览，`Ctrl+1` `Ctrl+2` `Ctrl+3`，`Ctrl+E` 循环
+- 分屏两侧**按行号双向联动**——编辑区滚到第 N 行，预览顶部就是第 N 行那一块，反过来也一样
+- 多文件标签页：每个标签独立的缓冲、撤销栈、选区和滚动位置；重启后恢复上次打开的已保存文件
+- 查找替换（`Ctrl+F` / `Ctrl+H`）：全部匹配高亮，当前项加描边，替换后报数
+- 字号 12–22 px 缩放，编辑器与预览同步
+- 段内单个换行是否算换行，可用工具栏的**硬换行**勾选框切换（[见下](#关于硬换行)）
+
+**渲染**
+
+- comrak 走 CommonMark + GFM：表格、任务列表、删除线、自动链接、脚注、`> [!NOTE]` 提示块
+- 数学公式 KaTeX，支持 `$...$`、`$$...$$`、`\(...\)`、`\[...\]` 和 ` ```math ` 围栏
+- 化学式 mhchem：`$\ce{2H2 + O2 -> 2H2O}$`
+- 右侧文档目录（H1–H6）：点击跳转，光标移动时自动高亮当前章节
+
+**文件**
+
+- 打开 / 保存 / 另存为，`.md` / `.markdown` / `.mdx` / `.txt`
+- 拖文件进窗口直接打开，可一次拖多个
+- 外部修改自动重载（有未保存改动时只提示、不覆盖）
+- 左侧边栏：当前目录的 Markdown 列表 + 最近打开；文件多时整栏滚动，长文件名省略
+
+**界面**
+
+- 自绘标题栏（无系统边框）：应用图标 + 文件/编辑/查看/帮助 + 文件名 + 最小化/最大化/关闭
+- 工具栏按功能分成几块浅色胶囊：`☰ 目录`｜文件操作｜`查找 替换`｜视图切换｜右端 `硬换行` / `主题`
+- 明暗两套主题，跟随系统或手动切换
+- 关于页含版本号、作者、邮箱（一键复制，不生成 `mailto:`）
+
+## 截图
+
+| 预览（代码高亮 + 公式） | 深色主题 |
+| --- | --- |
+| ![预览](docs/screenshots/preview-light.png) | ![深色](docs/screenshots/split-dark.png) |
+
+## 运行
+
+Windows 10 / 11，需要 **WebView2 运行时**（Win11 自带，Win10 多半也随 Edge 装好了）。
+
+- **直接跑**：从 [Releases](https://github.com/shiefzhang/PyMD/releases) 下载 `pymd.exe`，双击即可。单个 exe 自包含——CRT 静态链接、前端资源内嵌、不需要 `WebView2Loader.dll`，拷到别的机器上也能开。
+- **从源码构建**：见下文。
+
+## 快捷键
+
+| 操作 | 快捷键 |
+| --- | --- |
+| 新建标签 / 打开 / 保存 / 另存为 | `Ctrl+N` / `Ctrl+O` / `Ctrl+S` / `Ctrl+Shift+S` |
+| 关闭标签 | `Ctrl+W` |
+| 切换标签 | `Ctrl+Tab` |
+| 撤销 / 重做 | `Ctrl+Z` / `Ctrl+Y` |
+| 剪切 / 复制 / 粘贴 / 全选 | `Ctrl+X` / `Ctrl+C` / `Ctrl+V` / `Ctrl+A` |
+| 查找 / 替换 | `Ctrl+F` / `Ctrl+H`（`Enter` 下一个，`Esc` 关闭） |
+| 文本 / 分屏 / 预览 | `Ctrl+1` / `Ctrl+2` / `Ctrl+3`，`Ctrl+E` 循环 |
+| 侧边栏 / 文档目录 | `Ctrl+B` / `Ctrl+Shift+O` |
+| 放大 / 缩小 / 重置字号 | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` |
+
+## 从源码构建
+
+### 1. 前置
+
+**Microsoft C++ Build Tools**（MSVC 链接器）：<https://visualstudio.microsoft.com/visual-cpp-build-tools/>
+安装时勾选「使用 C++ 的桌面开发」。也可以用 winget（需要管理员终端）：
+
+```powershell
+winget install --id Microsoft.VisualStudio.2022.BuildTools `
+  --override "--quiet --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
+```
+
+**Rust**：<https://rustup.rs> → 默认的 `x86_64-pc-windows-msvc` 工具链。
+
+### 2. 装依赖、跑起来
+
+```bash
+npm install
+npm run tauri dev
+```
+
+### 3. 出可执行文件
+
+```bash
+npm run build          # 前端：tsc --noEmit + vite build → dist/
+cd src-tauri
+cargo build --release --features custom-protocol
+```
+
+产物在 `src-tauri/target/release/pymd.exe`。嫌 `target` 占 C 盘，可以在 `src-tauri/.cargo/config.toml` 里写 `[build] target-dir = "D:/…"`，或者设 `CARGO_TARGET_DIR` 环境变量。
+
+> **`--features custom-protocol` 不能省**。少了它，`tauri-build` 会打上 `dev` cfg，二进制启动后去连 `localhost:1420` 的 dev server，双击就是一片白屏 / `ERR_CONNECTION_REFUSED`。仓库里的 `build.bat` 已经带上了。
+
+## 技术栈
+
+| 层 | 选型 | 为什么 |
+| --- | --- | --- |
+| 应用壳 | Tauri 2.12 | 不打包浏览器内核，产物 6 MB 左右 |
+| 编辑器 | CodeMirror 6 | 状态驱动、可扩展、体积小 |
+| 查找替换 | `@codemirror/search` | 用它的 `SearchQuery` 和命令，UI 自己画 |
+| Markdown | **comrak 0.56**（Rust） | CommonMark + GFM 完整实现，走 AST 比 JS 侧快 |
+| 公式 | KaTeX + mhchem | 离线渲染，不依赖 CDN |
+| 文件监听 | notify 8 | 外部改动自动刷新 |
+| 前端构建 | Vite 6 + TypeScript | HMR 快，类型安全 |
+
+## 目录结构
+
+```
+pyMD/
+├─ index.html              标题栏（图标 + 菜单 + 窗口按钮）+ 工具栏 + 查找栏 + 侧边栏 + 标签条 + 工作区 + 目录面板
+├─ src/                    前端（TypeScript）
+│  ├─ main.ts              装配层：标签模型、菜单、文件操作、视图、侧边栏、目录、查找替换、快捷键、主题、滚动联动
+│  ├─ editor.ts            CodeMirror 封装、EditorState 换入换出、查找高亮、剪贴板命令
+│  ├─ math.ts              KaTeX + mhchem
+│  ├─ api.ts               所有 invoke() 的集中出口
+│  └─ style.css            主题变量 + 布局 + 预览排版
+├─ src-tauri/              Rust 后端
+│  ├─ src/lib.rs           8 个 #[tauri::command] + 内嵌的 Win32 剪贴板模块
+│  ├─ src/main.rs          只调用 pymd_lib::run()
+│  ├─ tauri.conf.json      窗口 / 打包 / 前端产物位置（decorations: false）
+│  ├─ capabilities/        权限声明（ACL）
+│  └─ icons/               应用图标（由 build_icons.py 生成）
+├─ tests/                  回归测试（7 个脚本，只依赖 Python 标准库）
+└─ docs/screenshots/       README 用的截图
+```
+
+## 实现笔记
+
+### 职责划分：什么放 Rust
+
+| 命令 | Rust 侧做什么 |
+| --- | --- |
+| `app_info` | 版本号与 IPC 连通性 |
+| `read_document` | 读文件、去 BOM、编码探测 |
+| `write_document` | 建目录、写文件 |
+| `render_markdown` | comrak 渲染 + 字数 / 标题（带行号）；参数 `hardbreaks` 控制段内单换行 |
+| `list_dir` | 列目录，目录优先排序 |
+| `watch_document` | notify 监听，emit `file-changed` |
+| `clipboard_read` / `clipboard_write` | Win32 的 `OpenClipboard` / `SetClipboardData` |
+
+查找替换**不**走 Rust：`@codemirror/search` 在内存 buffer 上匹配，没有 IO，放前端才对。
+
+**为什么自己写 Win32 剪贴板**：WebView2 里 `navigator.clipboard.readText()` 属于需要授权的权限，Chromium 会发 `PermissionRequested`，而 Tauri 没接管这个事件，于是 Promise 既不 resolve 也不 reject，「粘贴」就静默挂住。改用 `#[link]` 直接声明 `user32` / `kernel32` 的几个函数，约 70 行 `unsafe`，不需要额外 crate。注意 `SetClipboardData` 成功后那块 `GMEM_MOVEABLE` 内存归系统所有，不能再 `GlobalFree`。
+
+### 多文件标签页
+
+`tabs` 数组里每项持有一个完整的 `EditorState`（缓冲、撤销栈、选区都在 state 里），切标签就是 `view.setState(tab.state)`，并把滚动位置存进每项的 `scrollTop`。所以切回来时撤销栈、光标、滚动位置都在原位。
+
+### 文档目录
+
+标题不用「逐行扫 `#`」提取——那样代码围栏里的 `#` 注释会被误判、`>` 引用里的标题会漏掉。改用 comrak AST 遍历 `NodeValue::Heading` 取 `sourcepos.start.line`，和正文渲染用的是同一套解析规则，第 i 条目录必然对应预览里的第 i 个标题（前端渲染后按顺序给 `h1~h6` 打 `data-hi` 索引）。
+
+### 分屏滚动联动
+
+按滚动百分比对齐一定会漂：源码一行常常渲染成一屏（表格、长列表、公式），比例一错就越滚越偏。这里用 comrak 的 `render.sourcepos`，让每个块级元素带上 `data-sourcepos="起行:列-止行:列"`，前端据此建一张「行 → 像素」的锚点表，滚动时二分查找、块内按行数插值。两个方向用一个 `syncDriver` 标志 + 两层 `requestAnimationFrame` 吞掉程序性滚动的回声，避免两边互相推。
+
+### 关于硬换行
+
+CommonMark 规定段落内的单个换行是 softbreak，渲染成空格。中文写作里一个换行通常就是一条（比如列表里两条并列的说明），合并后会粘成一句，所以默认打开 comrak 的 `render.hardbreaks`。工具栏右端可以关掉它回到标准行为，选择记在 `localStorage`。
+
+### 图标
+
+AI 出的是白底 RGB 图，四角圆角还不一致。处理流程在 `src-tauri/icons/build_icons.py`：从四角泛洪抠掉白底 → 裁到内容边界 → 4× 超采样画统一圆角（半径 22%）→ 逐档缩放。ICO 必须用 `img.save(..., sizes=[...])` 从 1024 母版逐档生成，用 `append_images` 只会留下最后一档。
+
+> 改完图标要 `touch src-tauri/build.rs` 再编译：`tauri_build` 没有声明图标文件的 `rerun-if-changed`，否则资源段不会刷新，exe 里还是旧图标。
+
+## 回归测试
+
+`tests/` 下 7 个脚本，**只依赖 Python 标准库**，直接驱动真实 exe：用 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=…` 启动，再用一个 200 行的 CDP 客户端 `Runtime.evaluate` 驱动 DOM；窗口行为用 Win32 `SendInput` / `GetWindowRect`。
+
+| 脚本 | 覆盖 | 用例 |
+| --- | --- | --- |
+| `regression.py` | 启动、布局几何、渲染、三视图、侧边栏、多标签隔离、保存、查找替换、剪贴板、菜单、主题字号、目录、右键菜单、文件监听、会话恢复 | 158 |
+| `layout.py` | 标题栏图标与文件名排列、工具栏胶囊、视图切换位置、硬换行勾选框、长列表不溢出、长文件名省略 | 41 |
+| `sync.py` | `data-sourcepos`、硬换行开关、双向滚动联动、无回环 | 22 |
+| `verify_about.py` | 关于对话框文案、版本号与 `CARGO_PKG_VERSION` 联动、复制邮箱到系统剪贴板、exe 的 `LegalCopyright` | 22 |
+| `verify_icon.py` | 各尺寸 PNG/ICO、从 exe 资源里抠图标比对配色、关于页 logo | 20 |
+| `regression_win.py` | 标题栏拖动、边缘缩放、最小化、最大化、关闭 | 20 |
+| `regression_dialog.py` | `Ctrl+S` / `Ctrl+Shift+S` 另存为落盘、`Ctrl+O` 打开对话框 | 16 |
+
+合计 299 项。跑之前确认没有别的 pyMD 实例在跑——同一个 WebView2 用户数据目录被两个实例用不同参数挂载会直接 panic。
+
+## 已知限制
+
+- 预览里的链接点击被拦截（未接 opener 插件），只在状态栏显示 href。
+- 编码只认 UTF-8，非 UTF-8 走有损解码（会出乱码）。
+- 查找只能纯文本、固定不区分大小写，没有正则 / 整词开关。
+- 剪贴板命令只有 Windows 实现，其他平台直接报错。
+- 无边框窗口由 tao 处理拖拽缩放，Windows 的「贴靠布局」（Win+方向键悬停提示）不可用。
+- 标签会话只恢复已保存的文件，未保存的草稿关闭时确认后丢弃。
+- 文件监听器只挂在当前活动文件上，后台标签的内容要等切回去才更新。
+
+## 致谢
+
+视图模式、侧边栏、另存为、查找替换条与菜单结构参考了 [MDPad](https://github.com/yanglei1826877278/MDPad)（MIT），该项目的许可与版权归其作者所有。标签页、文档目录、滚动联动与其余代码为本仓库独立实现。
+
+## 版权
+
+© 2026 Pyrrhus · 保留所有权利。联系方式：zhangxuefeng@batonsoft.com
+（也可以从「帮助 → 关于 pyMD」里一键复制）

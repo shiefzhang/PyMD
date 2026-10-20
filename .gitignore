@@ -1,0 +1,25 @@
+# 依赖与构建产物
+node_modules
+dist
+dist-ssr
+
+# Rust / Cargo
+src-tauri/target
+src-tauri/gen/schemas
+
+# 本机的 target-dir（写死了 D 盘路径，别人机器上不一定有）
+src-tauri/.cargo/config.toml
+
+# 编辑器与系统
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+Thumbs.db
+*.log
+
+# 回归测试产物（脚本会重建）
+tests/.artifacts
+
+# 图标备份（build_icons.py 首次 apply 时生成）
+src-tauri/icons/_prev

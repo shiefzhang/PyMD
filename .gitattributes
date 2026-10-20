@@ -1,0 +1,6 @@
+# 仓库里统一存 LF；Windows 的 .bat 检出成 CRLF
+* text=auto eol=lf
+
+*.bat text eol=crlf
+*.png binary
+*.ico binary

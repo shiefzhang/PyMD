@@ -1,0 +1,43 @@
+[package]
+name = "pymd"
+version = "0.3.0"
+description = "pyMD - lightweight Markdown viewer and editor"
+authors = ["Pyrrhus"]
+edition = "2021"
+# Tauri 2.12 的 MSRV 是 1.90（策略：stable - 3），这里跟着声明
+rust-version = "1.90"
+
+[lib]
+# Tauri 2 的约定：业务代码写在 lib 里，main.rs 只负责调用 run()
+name = "pymd_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[features]
+# 不要删！Tauri 靠它区分「开发」与「生产」：
+# 没有这个 feature 时，tauri-build 会给应用打上 `dev` cfg，
+# 编译出来的二进制会去连 build.devUrl（http://localhost:1420），
+# 于是脱离 dev server 双击运行时出现 ERR_CONNECTION_REFUSED。
+# 带上前端产物会被内嵌进 exe，独立运行。
+custom-protocol = ["tauri/custom-protocol"]
+
+[build-dependencies]
+tauri-build = { version = "2.7", features = [] }
+
+[dependencies]
+tauri = { version = "2.12", features = [] }
+tauri-plugin-dialog = "2.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+comrak = "0.56"
+notify = "8.2"
+
+# 开发时（cargo tauri dev）打开优化的依赖编译，首次构建会慢一些但后续快
+[profile.dev]
+incremental = true
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true
