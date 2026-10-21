@@ -1,5 +1,6 @@
 """验证「关于」对话框：内容、版本联动、复制邮箱、明暗两套样式、快捷键对话框回归。"""
 import ctypes
+import io
 import json
 import os
 import subprocess
@@ -12,6 +13,9 @@ sys.path.insert(0, HERE)
 import cdp  # noqa: E402
 
 EXE = r"D:\mdpad-target\release\pymd.exe"
+# 版本号的唯一来源。测试跟着 package.json 走，不自己维护一份。
+with io.open(os.path.join(HERE, "..", "package.json"), encoding="utf-8") as _fh:
+    VERSION = json.load(_fh)["version"]
 PORT = 9355
 OUT = os.path.join(HERE, ".artifacts", "about")
 os.makedirs(OUT, exist_ok=True)
@@ -44,8 +48,14 @@ def read_clip():
         u32.CloseClipboard()
 
 
-def exe_copyright(path):
-    """读 exe 的 LegalCopyright —— 右键属性里「版权」那一行，来自 tauri.conf.json 的 bundle.copyright"""
+def exe_field(path, key):
+    """读 exe 版本资源里的某个字符串字段（LegalCopyright / FileVersion …）。
+
+    LegalCopyright 来自 tauri.conf.json 的 bundle.copyright；
+    FileVersion 来自 Cargo.toml 的 version —— 两个都值得断言：
+    改了版本号却忘了重新构建时，界面上的徽标是新版、exe 属性还是旧版，
+    只有这里能发现。
+    """
     v = ctypes.WinDLL("version", use_last_error=True)
     size = v.GetFileVersionInfoSizeW(path, None)
     if not size:
@@ -57,10 +67,23 @@ def exe_copyright(path):
     if not v.VerQueryValueW(buf, "\\VarFileInfo\\Translation", ctypes.byref(ptr), ctypes.byref(ln)):
         return None
     lang = ctypes.cast(ptr, ctypes.POINTER(wintypes.WORD))[0]
-    if not v.VerQueryValueW(buf, "\\StringFileInfo\\%04x04b0\\LegalCopyright" % lang,
+    if not v.VerQueryValueW(buf, "\\StringFileInfo\\%04x04b0\\" % lang + key,
                             ctypes.byref(ptr), ctypes.byref(ln)) or not ln.value:
         return None
     return ctypes.wstring_at(ptr.value, ln.value).rstrip("\x00")
+
+
+def ver_tuple(text):
+    """`0.4.0` / `0.4.0.0` 都归一成 (0, 4) 再比，免得被尾部补零坑到。"""
+    parts = []
+    for piece in (text or "").split("."):
+        try:
+            parts.append(int(piece))
+        except ValueError:
+            return None
+    while parts and parts[-1] == 0:
+        parts.pop()
+    return tuple(parts)
 
 
 env = dict(os.environ)
@@ -119,7 +142,9 @@ try:
     check("对话框已打开", info["open"], True)
     check("标题", info["title"], "关于")
     check("应用名", info["name"], "pyMD")
-    check("版本徽标", info["ver"], "v0.3.0")
+    # 期望值直接读 package.json：写死版本号的话，每次升版都要改测试，
+    # 改完之后「测试通过」这件事就没意义了
+    check("版本徽标", info["ver"], "v" + VERSION)
     check("作者行标签", info["author"], ["作者", "邮箱"])
     check("作者值", info["authorVal"], "Pyrrhus")
     check("邮箱值", info["mail"], "zhangxuefeng@batonsoft.com")
@@ -184,9 +209,12 @@ try:
     check("未新增冗余菜单项", dup, ["关于 pyMD", "快捷键说明"])
 
     # 8) exe 文件属性里的版权（右键 → 属性 → 详细信息）
-    cr = exe_copyright(EXE)
+    cr = exe_field(EXE, "LegalCopyright")
     print("  LegalCopyright:", cr)
     check("exe 带版权字段", bool(cr) and "Pyrrhus" in cr and "2026" in cr, True)
+    fv = exe_field(EXE, "FileVersion")
+    print("  FileVersion:", fv, "| package.json:", VERSION)
+    check("exe 文件版本与 package.json 一致", ver_tuple(fv), ver_tuple(VERSION))
 finally:
     proc.terminate()
     try:

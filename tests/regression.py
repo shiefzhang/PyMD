@@ -1,4 +1,4 @@
-"""pyMD 0.3.0 完整功能回归测试（主链路）。
+"""pyMD 完整功能回归测试（主链路）。
 
 方式：带 --remote-debugging-port 启动真实 exe，用最小 CDP 客户端直接驱动 DOM +
 读 EditorView 状态（window.__pymd，仅在 localStorage pymd-debug=1 时挂出）。
@@ -27,6 +27,10 @@ PORT = 9233
 BASE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(BASE, ".artifacts", "reg")
 DOCS = os.path.join(BASE, ".artifacts", "regdocs")
+
+# 版本号从 package.json 取，别在测试里再写死一份（以前写死过一次，升版必漏）
+with open(os.path.join(BASE, "..", "package.json"), encoding="utf-8") as _fh:
+    VERSION = json.load(_fh)["version"]
 
 DETACHED_PROCESS = 0x00000008
 CREATE_NEW_PROCESS_GROUP = 0x00000200
@@ -753,7 +757,7 @@ def main():
     snap = menu_snapshot(cdp)
     check("文件菜单展开", snap["visible"], True)
     check("文件菜单项", [i["label"] for i in snap["items"]],
-          ["新建", "打开", "保存", "另存为", "关闭标签", "关闭窗口"])
+          ["新建", "打开", "保存", "另存为", "导出为纯文本 (.txt)", "关闭标签", "关闭窗口"])
     check("文件菜单分隔线", snap["seps"], 2)
     check("快捷键标注", next(i["shortcut"] for i in snap["items"] if i["label"] == "另存为"), "Ctrl+Shift+S")
     shot(cdp, "07-menu-file.png")
@@ -761,7 +765,7 @@ def main():
     open_menu(cdp, "编辑")
     snap = menu_snapshot(cdp)
     check("编辑菜单项", [i["label"] for i in snap["items"]],
-          ["撤销", "重做", "剪切", "复制", "粘贴", "全选", "查找", "替换"])
+          ["撤销", "重做", "剪切", "复制", "复制为纯文本", "粘贴", "全选", "查找", "替换"])
     open_menu(cdp, "查看")
     snap = menu_snapshot(cdp)
     check("查看菜单项", [i["label"] for i in snap["items"]],
@@ -797,7 +801,7 @@ def main():
     )
     check("关于弹窗打开", about["open"], True)
     check("关于标题", about["title"], "关于")
-    check("关于含版本号", "v0.3.0" in about["body"], True)
+    check("关于含版本号", ("v" + VERSION) in about["body"], True)
     check("关于含版权行", "保留所有权利" in about["body"], True)
     shot(cdp, "08-about.png")
     js(cdp, "document.getElementById('info-dialog').close(); true")
@@ -920,7 +924,8 @@ def main():
         )
     )
     check("右键菜单出现", ctx["visible"], True)
-    check("右键菜单项", ctx["items"], ["撤销", "重做", "剪切", "复制", "粘贴", "全选", "查找", "替换"])
+    check("右键菜单项", ctx["items"],
+          ["撤销", "重做", "剪切", "复制", "复制为纯文本", "粘贴", "全选", "查找", "替换"])
     check("无选区时剪切/复制置灰", ctx["disabled"], ["剪切", "复制"])
     check("右键菜单不越界", ctx["inside"], True)
     shot(cdp, "11-contextmenu.png")

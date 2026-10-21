@@ -48,6 +48,14 @@ export const writeDocument = (path: string, content: string) =>
 export const renderMarkdown = (source: string, hardbreaks: boolean) =>
   invoke<Rendered>("render_markdown", { source, hardbreaks });
 
+/**
+ * Markdown → 纯文本（去掉所有标记）。
+ *
+ * 「复制为纯文本」写剪贴板、「另存为纯文本」写 .txt 都走这一条，
+ * 保证复制到的和存下去的是同一份文字。
+ */
+export const plainText = (source: string) => invoke<string>("render_plain_text", { source });
+
 export const listDir = (path: string) => invoke<DirEntry[]>("list_dir", { path });
 
 export const watchDocument = (path: string) => invoke<void>("watch_document", { path });

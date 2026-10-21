@@ -1,6 +1,6 @@
 # pyMD 回归测试
 
-七个脚本，直接驱动真实 exe。不依赖 pytest / selenium / playwright，只用 Python 标准库。
+八个脚本，直接驱动真实 exe。不依赖 pytest / selenium / playwright，只用 Python 标准库。
 
 ## 前置
 
@@ -17,10 +17,11 @@ cd tests
 python regression.py         # 主功能 + 布局，158 项
 python regression_win.py     # 窗口交互，20 项
 python regression_dialog.py  # 原生对话框，16 项
-python verify_about.py       # 关于/版权对话框，22 项
+python verify_about.py       # 关于/版权对话框，23 项
 python layout.py             # 界面布局专项，41 项
 python verify_icon.py        # 图标链路（含从 exe 里抠图标），20 项
 python sync.py               # 分屏滚动联动 + 单换行渲染，22 项
+python plaintext.py          # 纯文本导出（复制 / 另存 .txt），61 项
 ```
 
 `layout.py` 会真的在 `D:\tmp\pymd_layoutdir` 造 40 多个文件，把侧边栏列表撑长，
@@ -40,7 +41,7 @@ python sync.py               # 分屏滚动联动 + 单换行渲染，22 项
 | 读编辑器状态 | `window.__pymd`（只在 `localStorage.pymd-debug === "1"` 时挂出），能拿到完整 `EditorState`，包括没渲染到 DOM 的长文档 |
 | 原生对话框 | 对话框在 WebView 之外，只能用 `SendInput` 往文件名框打完整路径再回车 |
 | 窗口行为 | `GetWindowRect` / `IsIconic` / `IsZoomed` 读真实窗口状态；拖动和缩放用 `SendInput` 模拟鼠标 |
-| 剪贴板断言 | `verify_about.py` 用 `OpenClipboard` / `GetClipboardData` 直接读系统剪贴板，验证「复制邮箱」真的落到了剪贴板 |
+| 剪贴板断言 | `verify_about.py` / `plaintext.py` 用 `OpenClipboard` / `GetClipboardData` 直接读系统剪贴板，验证内容真的落到了剪贴板（`GetClipboardData` 的 `restype` 必须声明成 `c_void_p`，否则 64 位句柄被截断，读出来永远是空） |
 | exe 图标断言 | `verify_icon.py` 用 `shell32.ExtractIconExW` 把 exe 资源段里的图标抠出来（注意：这个 API 在 shell32，不在 user32），再用 `DrawIconEx` 画进 DIB 读回 RGBA，和 `icons/32x32.png` 比对 |
 
 为什么不用模拟鼠标点界面：无边框窗口的坐标随 DPI 和窗口位置变，且 `SetForegroundWindow` 会静默失败，
@@ -58,4 +59,6 @@ python sync.py               # 分屏滚动联动 + 单换行渲染，22 项
 
 - 主回归不带 `Ctrl+S` 的弹窗路径（会阻塞），保存只测「已命名文件直接写盘」；另存为在 `regression_dialog.py` 里。
 - 对话框脚本对键盘事件做了「没弹出就重试」的兜底，因为 `SendInput` 偶发丢失首个组合键。
+- 认保存对话框不能靠「出现了新窗口」：提示框、阴影窗口也会算新窗口，`SendInput` 就打空了。
+  要按「新出现 + 类名 `#32770` + 标题含另存为」三重条件筛。
 - 两处「预期值」是照产品当前行为写的，不是理想行为：菜单栏的剪切/复制不置灰、两个草稿标签各占一格。

@@ -34,6 +34,7 @@
 **文件**
 
 - 打开 / 保存 / 另存为，`.md` / `.markdown` / `.mdx` / `.txt`
+- **导出纯文本**：编辑菜单的「复制为纯文本」把标记全去掉再进剪贴板（有选区就只转选区），文件菜单的「导出为纯文本 (.txt)」另存一份无格式副本
 - 拖文件进窗口直接打开，可一次拖多个
 - 外部修改自动重载（有未保存改动时只提示、不覆盖）
 - 左侧边栏：当前目录的 Markdown 列表 + 最近打开；文件多时整栏滚动，长文件名省略
@@ -148,6 +149,7 @@ pyMD/
 | `read_document` | 读文件、去 BOM、编码探测 |
 | `write_document` | 建目录、写文件 |
 | `render_markdown` | comrak 渲染 + 字数 / 标题（带行号）；参数 `hardbreaks` 控制段内单换行 |
+| `render_plain_text` | comrak AST → 纯文本（去标记），供「复制为纯文本 / 导出 .txt」共用 |
 | `list_dir` | 列目录，目录优先排序 |
 | `watch_document` | notify 监听，emit `file-changed` |
 | `clipboard_read` / `clipboard_write` | Win32 的 `OpenClipboard` / `SetClipboardData` |
@@ -172,6 +174,20 @@ pyMD/
 
 CommonMark 规定段落内的单个换行是 softbreak，渲染成空格。中文写作里一个换行通常就是一条（比如列表里两条并列的说明），合并后会粘成一句，所以默认打开 comrak 的 `render.hardbreaks`。工具栏右端可以关掉它回到标准行为，选择记在 `localStorage`。
 
+### 纯文本导出
+
+去标记走的是 comrak AST，不是正则：`**` 出现在代码块里不该被删、`#` 出现在围栏里根本不是标题、表格的 `|` 也可能是正文里的字符——正则清理要给每一项配例外，最后一定会漏。按节点类型摊平就没有这些边界：标题 / 段落取文字，代码块取 `literal`，列表按 `- ` / `1. ` 重排并保留缩进，表格拼成 `名称 | 数量`，链接只留文字、图片只留 alt、公式只留 TeX 源码，原始 HTML 块整块丢弃。
+
+「复制为纯文本」和「导出为纯文本」调的是**同一个 `render_plain_text`**，所以复制到的和存下去的逐字节一致。导出（`savePlainTextAs`）刻意不复用「另存为」：另存为会把标签的 `path` 改绑到新文件，而导出只是往外扔一份副本——如果连标签一起改绑，用户接着按 `Ctrl+S` 就会把 Markdown 源码以纯文本写回去，标记全丢。
+
+缩进只有一层负责：`block_plain` 返回的每一行都不带缩进，由 `list_plain` 在缩子块时统一 `pad_lines`。早期版本让缩进参数一路往下传，嵌套列表被上下两层各缩一次，变成 4 空格起步。
+
+### 版本号
+
+只有一个来源：`package.json` 的 `version`。其余三处都以它为基准对齐——`src-tauri/tauri.conf.json`（关于页显示、安装包版本）、`src-tauri/Cargo.toml`（exe 的 `FileVersion`）、前端 `APP_VERSION`（构建期由 `vite.config.ts` 的 `define` 注入，不再手写）。`verify_about.py` 直接读 `package.json` 断言界面徽标和 exe 的 `FileVersion` 都等于它，所以「改了版本号忘了重新构建」会被测试当场抓住。
+
+升版三步：改这三个文件的版本 → `npm run build` → `touch src-tauri/build.rs` 后重新 `cargo build --release --features custom-protocol`（资源段才会刷新）。
+
 ### 图标
 
 AI 出的是白底 RGB 图，四角圆角还不一致。处理流程在 `src-tauri/icons/build_icons.py`：从四角泛洪抠掉白底 → 裁到内容边界 → 4× 超采样画统一圆角（半径 22%）→ 逐档缩放。ICO 必须用 `img.save(..., sizes=[...])` 从 1024 母版逐档生成，用 `append_images` 只会留下最后一档。
@@ -180,19 +196,20 @@ AI 出的是白底 RGB 图，四角圆角还不一致。处理流程在 `src-tau
 
 ## 回归测试
 
-`tests/` 下 7 个脚本，**只依赖 Python 标准库**，直接驱动真实 exe：用 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=…` 启动，再用一个 200 行的 CDP 客户端 `Runtime.evaluate` 驱动 DOM；窗口行为用 Win32 `SendInput` / `GetWindowRect`。
+`tests/` 下 8 个脚本，**只依赖 Python 标准库**，直接驱动真实 exe：用 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=…` 启动，再用一个 200 行的 CDP 客户端 `Runtime.evaluate` 驱动 DOM；窗口行为用 Win32 `SendInput` / `GetWindowRect`。
 
 | 脚本 | 覆盖 | 用例 |
 | --- | --- | --- |
 | `regression.py` | 启动、布局几何、渲染、三视图、侧边栏、多标签隔离、保存、查找替换、剪贴板、菜单、主题字号、目录、右键菜单、文件监听、会话恢复 | 158 |
 | `layout.py` | 标题栏图标与文件名排列、工具栏胶囊、视图切换位置、硬换行勾选框、长列表不溢出、长文件名省略 | 41 |
 | `sync.py` | `data-sourcepos`、硬换行开关、双向滚动联动、无回环 | 22 |
-| `verify_about.py` | 关于对话框文案、版本号与 `CARGO_PKG_VERSION` 联动、复制邮箱到系统剪贴板、exe 的 `LegalCopyright` | 22 |
+| `verify_about.py` | 关于对话框文案、版本徽标与 `package.json` 一致、exe 的 `FileVersion` / `LegalCopyright`、复制邮箱到系统剪贴板 | 23 |
 | `verify_icon.py` | 各尺寸 PNG/ICO、从 exe 资源里抠图标比对配色、关于页 logo | 20 |
 | `regression_win.py` | 标题栏拖动、边缘缩放、最小化、最大化、关闭 | 20 |
 | `regression_dialog.py` | `Ctrl+S` / `Ctrl+Shift+S` 另存为落盘、`Ctrl+O` 打开对话框 | 16 |
+| `plaintext.py` | 两个入口的菜单位置、纯文本逐项去标记、选区只转选区、导出 .txt 与剪贴板逐字节一致且不改绑标签 | 61 |
 
-合计 299 项。跑之前确认没有别的 pyMD 实例在跑——同一个 WebView2 用户数据目录被两个实例用不同参数挂载会直接 panic。
+合计 361 项。跑之前确认没有别的 pyMD 实例在跑——同一个 WebView2 用户数据目录被两个实例用不同参数挂载会直接 panic。
 
 ## 已知限制
 
@@ -203,6 +220,7 @@ AI 出的是白底 RGB 图，四角圆角还不一致。处理流程在 `src-tau
 - 无边框窗口由 tao 处理拖拽缩放，Windows 的「贴靠布局」（Win+方向键悬停提示）不可用。
 - 标签会话只恢复已保存的文件，未保存的草稿关闭时确认后丢弃。
 - 文件监听器只挂在当前活动文件上，后台标签的内容要等切回去才更新。
+- 纯文本导出同样只认 UTF-8；导出的 `.txt` 不带 BOM，比记事本早的远古工具可能识别成 ANSI。
 
 ## 致谢
 

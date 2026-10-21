@@ -413,13 +413,14 @@ fn write_document(path: String, content: String) -> CmdResult<u64> {
     Ok(content.len() as u64)
 }
 
-/// Markdown → HTML。渲染放在 Rust 侧：comrak 比 JS 实现快，且前端只管显示。
+/// 预览与纯文本导出共用的一份解析配置。
 ///
-/// `hardbreaks`：段内单个换行是否渲染成 `<br>`。由工具栏的勾选框控制，
-/// 默认开——中文写作里一个换行通常就是一条。
-#[tauri::command]
-fn render_markdown(source: String, hardbreaks: bool) -> CmdResult<Rendered> {
-    // comrak 0.56 的 Options 带生命周期参数，这里让编译器自己推断
+/// 抽出来是为了**保证两边对「什么是列表 / 什么是代码块 / 什么是标题」的判断完全一致**：
+/// 如果这边开了 `table` 扩展、那边没开，同一份文档在预览里是表格、导出成 .txt 却变成
+/// 一堆带竖线的段落，用户会以为是 bug。唯一不共用的是纯渲染相关的开关
+/// （`sourcepos`、`hardbreaks`），它们在各自调用处单独设。
+fn preview_options() -> comrak::Options<'static> {
+    // comrak 0.56 的 Options 带生命周期参数；这里所有字段都是 owned，因此是 'static
     let mut options = comrak::Options::default();
 
     // GFM 扩展
@@ -440,8 +441,18 @@ fn render_markdown(source: String, hardbreaks: bool) -> CmdResult<Rendered> {
     options.extension.math_code = true; // $`...`$ 与 ```math 围栏
     // 允许原始 HTML 直通。读的是本地文件，不设防
     options.render.r#unsafe = true;
+
+    options
+}
+
+/// Markdown → HTML。渲染放在 Rust 侧：comrak 比 JS 实现快，且前端只管显示。
+///
+/// `hardbreaks`：段内单个换行是否渲染成 `<br>`。由工具栏的勾选框控制，
+/// 默认开——中文写作里一个换行通常就是一条。
+#[tauri::command]
+fn render_markdown(source: String, hardbreaks: bool) -> CmdResult<Rendered> {
+    let mut options = preview_options();
     // 单个换行是否也换行（CommonMark 默认把段内换行当空格）。
-    // 由工具栏的「硬换行」勾选框控制。
     options.render.hardbreaks = hardbreaks;
     // 块级元素带 data-sourcepos="起行:列-止行:列"，
     // 供前端做「源码 ↔ 预览」的滚动联动（按行号对齐，不按比例）。
@@ -453,6 +464,250 @@ fn render_markdown(source: String, hardbreaks: bool) -> CmdResult<Rendered> {
         lines: source.lines().count(),
         headings: collect_headings(&source),
     })
+}
+
+// ---------------------------------------------------------------------------
+// 纯文本导出
+// ---------------------------------------------------------------------------
+
+/// Markdown → 纯文本：去掉所有标记，只留可读文字。
+///
+/// 服务两个入口：「复制为纯文本」（写剪贴板）和「另存为纯文本」（写 .txt）。
+/// 两边共用同一个函数，保证「复制出来的」和「存下去的」逐字节相同。
+#[tauri::command]
+fn render_plain_text(source: String) -> CmdResult<String> {
+    Ok(markdown_to_plain(&source))
+}
+
+/// 走 AST 而不是正则去标记。
+///
+/// 原因：`**` 出现在代码块里不该被删、`#` 出现在围栏里根本不是标题、表格的 `|`
+/// 也可能是正文里的字符 —— 用正则清理要给每一项配例外，最后一定会漏。交给解析器
+/// 只需要按节点类型决定「这一块怎么摊平」。
+///
+/// 输出约定：
+/// - 块与块之间隔一个空行（标题、段落、列表、代码块都算块）
+/// - 段内换行保留成换行（txt 是纯文本，按作者写的断行展示最自然）
+/// - 列表保留 `- ` / `1. ` 前缀和缩进，任务列表保留 `[x]` / `[ ]`
+/// - 代码块保留原文（缩进不清洗）；行内代码只留内容，去掉反引号
+/// - 链接只留文字、图片只留 alt、公式只留 TeX 源码
+/// - 原始 HTML 块整块丢弃（那不是给人读的正文）
+fn markdown_to_plain(source: &str) -> String {
+    use comrak::{parse_document, Arena};
+
+    let arena = Arena::new();
+    let options = preview_options();
+    let root = parse_document(&arena, source, &options);
+
+    let mut blocks: Vec<String> = Vec::new();
+    for child in root.children() {
+        let text = block_plain(child);
+        let text = text.trim_end();
+        if !text.trim().is_empty() {
+            blocks.push(text.to_string());
+        }
+    }
+
+    let mut out = blocks.join("\n\n");
+    out.push('\n');
+    out
+}
+
+/// 摊平一个块级节点。
+///
+/// **约定：返回值的每一行都不带缩进**，缩进由上一层（`list_plain` 缩子块）统一加。
+/// 早期版本让 `pad` 一路往下传，结果嵌套列表被上、下两层各缩一次，变成 4 空格起步 ——
+/// 「谁负责缩进」只能有一个答案，所以挪到最外面统一处理。
+fn block_plain<'a>(node: &'a comrak::nodes::AstNode<'a>) -> String {
+    use comrak::nodes::NodeValue;
+
+    let data = node.data.borrow();
+    match &data.value {
+        // 叶子块：一行一段文字
+        NodeValue::Paragraph
+        | NodeValue::Heading(_)
+        | NodeValue::DescriptionTerm
+        | NodeValue::DescriptionDetails => inline_plain(node),
+
+        // 代码块：原文照抄，语言标记（```rust 的 rust）本来就不在 literal 里
+        NodeValue::CodeBlock(code) => code.literal.trim_end().to_string(),
+
+        // 分隔线、原始 HTML、YAML front matter 都不是给人读的正文
+        NodeValue::ThematicBreak | NodeValue::HtmlBlock(_) | NodeValue::FrontMatter(_) => {
+            String::new()
+        }
+
+        NodeValue::BlockQuote | NodeValue::MultilineBlockQuote(_) => join_children(node),
+
+        NodeValue::List(list) => list_plain(node, list),
+
+        // Item / TaskItem 只在 list_plain 里被消费；单独撞上时按普通块拼
+        NodeValue::Item(_) | NodeValue::TaskItem(_) => join_children(node),
+
+        NodeValue::Table(_) => table_plain(node),
+
+        NodeValue::DescriptionList | NodeValue::DescriptionItem(_) => join_children(node),
+
+        // 脚注定义：`[1] 条文`，否则条文会孤零零地接在正文后面，看不出是脚注
+        NodeValue::FootnoteDefinition(def) => {
+            let body = join_children(node);
+            if body.is_empty() {
+                String::new()
+            } else {
+                format!("[{}] {body}", def.name)
+            }
+        }
+
+        // 其他（Alert 等容器）直接摊平子节点
+        _ => join_children(node),
+    }
+}
+
+/// 把子节点各自当成一个块，块之间空一行。
+fn join_children<'a>(node: &'a comrak::nodes::AstNode<'a>) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    for child in node.children() {
+        let text = block_plain(child);
+        let text = text.trim_end();
+        if !text.trim().is_empty() {
+            parts.push(text.to_string());
+        }
+    }
+    parts.join("\n\n")
+}
+
+/// 给多行文本加行首前缀。`first_too=false` 时保留首行不动
+/// （用在「记号后面紧跟首块」的场合，比如 `- 第一项`）。
+fn pad_lines(text: &str, pad: &str, first_too: bool) -> String {
+    if pad.is_empty() {
+        return text.to_string();
+    }
+    let mut out = String::new();
+    for (index, line) in text.split('\n').enumerate() {
+        if index > 0 {
+            out.push('\n');
+        }
+        // 空行不加前缀，免得 txt 里到处是尾随空格
+        if (index > 0 || first_too) && !line.is_empty() {
+            out.push_str(pad);
+        }
+        out.push_str(line);
+    }
+    out
+}
+
+/// 列表：保留记号，子块（续段、嵌套列表、代码块）按记号宽度缩进。
+fn list_plain<'a>(
+    node: &'a comrak::nodes::AstNode<'a>,
+    list: &comrak::nodes::NodeList,
+) -> String {
+    use comrak::nodes::{ListType, NodeValue};
+
+    let ordered = matches!(list.list_type, ListType::Ordered);
+    let mut ordinal = list.start;
+    let mut items: Vec<String> = Vec::new();
+
+    for item in node.children() {
+        // 任务列表的项是 TaskItem（不是在 Item 里套一个 checkbox 节点）
+        let marker = match &item.data.borrow().value {
+            NodeValue::TaskItem(task) => {
+                let box_mark = if task.symbol.is_some() { "[x] " } else { "[ ] " };
+                if ordered {
+                    format!("{ordinal}. {box_mark}")
+                } else {
+                    format!("- {box_mark}")
+                }
+            }
+            _ => {
+                if ordered {
+                    format!("{ordinal}. ")
+                } else {
+                    "- ".to_string()
+                }
+            }
+        };
+        ordinal += 1;
+
+        // 续行与子块缩进对齐到记号后面，嵌套列表因此自然往右退
+        let child_pad = " ".repeat(marker.chars().count());
+        let mut out = String::new();
+        out.push_str(&marker);
+
+        let mut first = true;
+        for child in item.children() {
+            let text = block_plain(child);
+            let text = text.trim_end();
+            if text.trim().is_empty() {
+                continue;
+            }
+            if first {
+                // 首块接在记号后面，只有它的续行需要缩进
+                out.push_str(&pad_lines(text, &child_pad, false));
+                first = false;
+            } else {
+                // tight 列表（默认写法）换行即可；loose 列表才空一行
+                out.push('\n');
+                if !list.tight {
+                    out.push('\n');
+                }
+                out.push_str(&pad_lines(text, &child_pad, true));
+            }
+        }
+
+        items.push(out.trim_end().to_string());
+    }
+
+    // 项与项之间一律只换行、不留空行：纯文本里列表本来就靠缩进和记号区分，
+    // 空行只会让它看起来散了。而且 comrak 对任务列表的 `tight` 判定并不可靠
+    // （`- [x] a` / `- [ ] b` 这种紧凑写法也可能报 loose），指望它反而多插空行。
+    items.join("\n")
+}
+
+/// 表格：一行一条记录，单元格之间用 ` | ` 分隔，表头不加分隔线。
+fn table_plain<'a>(node: &'a comrak::nodes::AstNode<'a>) -> String {
+    let mut rows: Vec<String> = Vec::new();
+    for row in node.children() {
+        let mut cells: Vec<String> = Vec::new();
+        for cell in row.children() {
+            // 单元格里可能有换行 / 多段落，压成一行才能保持表格形状
+            let text = inline_plain(cell);
+            let flattened = text.split_whitespace().collect::<Vec<_>>().join(" ");
+            cells.push(flattened);
+        }
+        rows.push(cells.join(" | ").trim_end().to_string());
+    }
+    rows.join("\n")
+}
+
+/// 摊平一段行内内容（粗体、斜体、行内代码、链接、图片都退化成文字）。
+fn inline_plain<'a>(node: &'a comrak::nodes::AstNode<'a>) -> String {
+    let mut out = String::new();
+    walk_inline(node, &mut out);
+    out
+}
+
+fn walk_inline<'a>(node: &'a comrak::nodes::AstNode<'a>, out: &mut String) {
+    use comrak::nodes::NodeValue;
+
+    for child in node.children() {
+        match &child.data.borrow().value {
+            NodeValue::Text(text) => out.push_str(text),
+            NodeValue::Code(code) => out.push_str(&code.literal),
+            // 公式留 TeX 源码：`$x^2$` → `x^2`
+            NodeValue::Math(math) => out.push_str(&math.literal),
+            // 段内换行保留成换行；硬换行同理
+            NodeValue::SoftBreak | NodeValue::LineBreak => out.push('\n'),
+            // 原始 HTML 内联标签（<br> / <b> 之类）直接丢掉
+            NodeValue::HtmlInline(_) | NodeValue::EscapedTag(_) => {}
+            NodeValue::FootnoteReference(reference) => {
+                out.push('[');
+                out.push_str(&reference.name);
+                out.push(']');
+            }
+            // 链接与图片：只留可见文字（图片是 alt），地址不保留
+            _ => walk_inline(child, out),
+        }
+    }
 }
 
 #[tauri::command]
@@ -546,6 +801,7 @@ pub fn run() {
             read_document,
             write_document,
             render_markdown,
+            render_plain_text,
             list_dir,
             clipboard_read,
             clipboard_write,

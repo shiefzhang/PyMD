@@ -134,6 +134,9 @@ let hardbreaks = localStorage.getItem(LS.hardbreaks) !== "0";
 
 const MD_FILTER = [{ name: "Markdown", extensions: ["md", "markdown", "mdx", "txt"] }];
 
+/** 「另存为纯文本」用的过滤器。单独一份，避免用户手误把源文档存成 .md 覆盖掉。 */
+const TXT_FILTER = [{ name: "纯文本", extensions: ["txt"] }];
+
 /** Tauri 窗口对象。纯浏览器里调试时拿不到，置 null 后各处都会跳过窗口操作。 */
 function currentWindow(): ReturnType<typeof getCurrentWindow> | null {
   try {
@@ -700,6 +703,61 @@ function newFile(): void {
   activateTab(tab.id);
 }
 
+/* ---------------------------- 导出纯文本 ---------------------------- */
+
+/** 把 Markdown 源码转成纯文本（去掉所有标记）。转换在 Rust 侧做，前端只负责搬运。 */
+async function toPlainText(markdown: string): Promise<string> {
+  return api.plainText(markdown);
+}
+
+/**
+ * 另存为纯文本（.txt）。
+ *
+ * 注意这里**不复用 `saveFileAs`**：那个会把标签的 `path` / `name` 改成新文件，
+ * 而「导出纯文本」只是往外扔一份副本，真正的源文档还是原来那个 .md。
+ * 如果连标签一起改绑，用户接着按 Ctrl+S 就会把 Markdown 源码以纯文本写回，
+ * 标记全丢 —— 这是最容易埋的坑，所以这里只 `writeDocument`，不碰 tab。
+ */
+async function savePlainTextAs(): Promise<void> {
+  const tab = activeTab();
+  if (!tab) return;
+
+  // 默认文件名：沿用原标题，只把扩展名换成 .txt
+  const stem = (tab.path ?? tab.name).replace(/\.(md|markdown|mdx|txt)$/i, "");
+  const picked = await saveDialog({ defaultPath: `${stem}.txt`, filters: TXT_FILTER });
+  if (typeof picked !== "string") return;
+
+  try {
+    const text = await toPlainText(editor.getDoc());
+    const bytes = await api.writeDocument(picked, text);
+    flashStatus(`已导出纯文本 ${baseName(picked)}（${bytes} 字节）`);
+  } catch (err) {
+    window.alert(`导出纯文本失败：${String(err)}`);
+  }
+}
+
+/**
+ * 复制为纯文本：有选区就只转选区，没选区转整篇。
+ *
+ * 和「复制」的区别：那个原样复制 Markdown 源码，这个先把 `#`、`**`、`|`
+ * 这些标记去掉再进剪贴板，粘到聊天窗口 / 普通编辑器里不会是一堆符号。
+ */
+async function copyPlainText(): Promise<void> {
+  const selection = editor.getSelectedText();
+  const scoped = selection.length > 0;
+  try {
+    const text = await toPlainText(scoped ? selection : editor.getDoc());
+    if (!text.trim()) {
+      flashStatus("没有可复制的文字");
+      return;
+    }
+    await api.clipboardWrite(text);
+    flashStatus(`已复制纯文本 ${text.trim().length} 个字符${scoped ? "（选区）" : "（全文）"}`);
+  } catch (err) {
+    flashStatus(`复制纯文本失败：${String(err)}`);
+  }
+}
+
 /* ------------------------------- 主题 ------------------------------- */
 function applyTheme(theme: "light" | "dark"): void {
   document.documentElement.dataset.theme = theme;
@@ -1180,12 +1238,14 @@ type ActionId =
   | "openFile"
   | "saveFile"
   | "saveAs"
+  | "saveAsText"
   | "closeTab"
   | "closeWindow"
   | "undo"
   | "redo"
   | "cut"
   | "copy"
+  | "copyPlainText"
   | "paste"
   | "selectAll"
   | "find"
@@ -1219,6 +1279,7 @@ const MENUS: Array<{ key: string; label: string; items: MenuItem[] }> = [
       null,
       { label: "保存", action: "saveFile", shortcut: "Ctrl+S" },
       { label: "另存为", action: "saveAs", shortcut: "Ctrl+Shift+S" },
+      { label: "导出为纯文本 (.txt)", action: "saveAsText" },
       null,
       { label: "关闭标签", action: "closeTab", shortcut: "Ctrl+W" },
       { label: "关闭窗口", action: "closeWindow" },
@@ -1233,6 +1294,7 @@ const MENUS: Array<{ key: string; label: string; items: MenuItem[] }> = [
       null,
       { label: "剪切", action: "cut", shortcut: "Ctrl+X" },
       { label: "复制", action: "copy", shortcut: "Ctrl+C" },
+      { label: "复制为纯文本", action: "copyPlainText" },
       { label: "粘贴", action: "paste", shortcut: "Ctrl+V" },
       { label: "全选", action: "selectAll", shortcut: "Ctrl+A" },
       null,
@@ -1281,7 +1343,8 @@ function showInfo(title: string, body: string): void {
  *   2. 不生成 mailto 链接：WebView2 里点 mailto 要外部协议授权，默认会被拦，
  *      点了没反应反而更差，所以改成「复制」按钮，走已有的 Rust 剪贴板命令；
  *   3. 对话框只放本机静态信息，不发任何网络请求，也不带机器名 / 路径。 */
-const APP_VERSION = "0.3.0";
+// 构建期从 package.json 注入（见 vite.config.ts）。以前这里手写一份，升级时必漏。
+const APP_VERSION = __APP_VERSION__;
 const AUTHOR = "Pyrrhus";
 const COPYRIGHT_YEAR = 2026;
 const MAILBOX = ["zhangxuefeng", "batonsoft.com"];
@@ -1403,6 +1466,7 @@ const actions: Record<ActionId, () => void | Promise<void>> = {
   openFile,
   saveFile,
   saveAs: saveFileAs,
+  saveAsText: savePlainTextAs,
   closeTab: () => {
     if (activeId) void closeTab(activeId);
   },
@@ -1435,6 +1499,7 @@ const actions: Record<ActionId, () => void | Promise<void>> = {
       flashStatus(`复制失败：${String(err)}`);
     }
   },
+  copyPlainText,
   paste: async () => {
     try {
       const text = await api.clipboardRead();

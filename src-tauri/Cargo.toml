@@ -1,6 +1,6 @@
 [package]
 name = "pymd"
-version = "0.3.0"
+version = "0.4.0"
 description = "pyMD - lightweight Markdown viewer and editor"
 authors = ["Pyrrhus"]
 edition = "2021"
