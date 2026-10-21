@@ -1,6 +1,6 @@
 # pyMD
 
-**用 Tauri 2 + CodeMirror 6 写的 Markdown 编辑器**：单文件约 6 MB，Markdown 渲染、目录提取、文件读写、文件监听全部在 Rust 侧完成，前端只负责编辑和显示。
+**用 Tauri 2 + CodeMirror 6 写的 Markdown 编辑器**：单文件约 6.8 MB，Markdown 渲染、目录提取、文件读写、文件监听全部在 Rust 侧完成，前端只负责编辑和显示。
 
 <p>
   <img alt="Tauri 2.12" src="https://img.shields.io/badge/Tauri-2.12-24C8DB?logo=tauri&logoColor=white">
@@ -29,6 +29,7 @@
 - comrak 走 CommonMark + GFM：表格、任务列表、删除线、自动链接、脚注、`> [!NOTE]` 提示块
 - 数学公式 KaTeX，支持 `$...$`、`$$...$$`、`\(...\)`、`\[...\]` 和 ` ```math ` 围栏
 - 化学式 mhchem：`$\ce{2H2 + O2 -> 2H2O}$`
+- **公式转图**：工具栏勾上「公式转图」，预览里的公式会变成 PNG 图片。KaTeX 的排版依赖自带字体，复制到 Word / 微信 / 邮件里字体一丢就散架；图片走哪都认。默认关（矢量最清晰），勾选状态记在本地
 - 右侧文档目录（H1–H6）：点击跳转，光标移动时自动高亮当前章节
 
 **文件**
@@ -42,7 +43,7 @@
 **界面**
 
 - 自绘标题栏（无系统边框）：应用图标 + 文件/编辑/查看/帮助 + 文件名 + 最小化/最大化/关闭
-- 工具栏按功能分成几块浅色胶囊：`☰ 目录`｜文件操作｜`查找 替换`｜视图切换｜右端 `硬换行` / `主题`
+- 工具栏按功能分成几块浅色胶囊：`☰ 目录`｜文件操作｜`查找 替换`｜视图切换｜右端 `硬换行` / `公式转图` / `主题`
 - 明暗两套主题，跟随系统或手动切换
 - 关于页含版本号、作者、邮箱（一键复制，不生成 `mailto:`）
 
@@ -115,6 +116,7 @@ cargo build --release --features custom-protocol
 | 查找替换 | `@codemirror/search` | 用它的 `SearchQuery` 和命令，UI 自己画 |
 | Markdown | **comrak 0.56**（Rust） | CommonMark + GFM 完整实现，走 AST 比 JS 侧快 |
 | 公式 | KaTeX + mhchem | 离线渲染，不依赖 CDN |
+| 公式转图 | MathJax 3（`mathjax-full`，懒加载） | SVG 输出是路径化的，转位图不需要字体；整块 1.2 MB 只在勾选时才加载 |
 | 文件监听 | notify 8 | 外部改动自动刷新 |
 | 前端构建 | Vite 6 + TypeScript | HMR 快，类型安全 |
 
@@ -182,6 +184,22 @@ CommonMark 规定段落内的单个换行是 softbreak，渲染成空格。中�
 
 缩进只有一层负责：`block_plain` 返回的每一行都不带缩进，由 `list_plain` 在缩子块时统一 `pad_lines`。早期版本让缩进参数一路往下传，嵌套列表被上下两层各缩一次，变成 4 空格起步。
 
+### 公式转图
+
+问题出在「粘出去」而不是「看起来」：KaTeX 排的是 `HTML + 自带字体`，粘到 Word / 微信里字体一丢就散架，而这些软件也不认 MathML 和 TeX。位图才是通用格式。
+
+为什么不用 KaTeX 自己光栅化：它的布局依赖 `KaTeX_Main` / `KaTeX_Math` 等字体，转 SVG 得把 `katex.min.css` 和十几个 woff2 一起内联进 `foreignObject`，少一个就是豆腐块；而 `data:` URI 里的 SVG 又不允许加载外部资源。MathJax 的 SVG 输出是**路径化**的——每个字形就是一段 `<path>`，天生不依赖字体，序列化出来直接画进 canvas 就行。所以：**排版仍用 KaTeX（预览所见即所得），出图借 MathJax**，整块 `mathjax-full` 只在勾选时才 `import()`。
+
+几个实现上的取舍：
+
+- 位图按 **3 倍**像素出（canvas 放大 3 倍再 `toDataURL`），CSS 尺寸按原始尺寸给，粘进 Word 放大或打印都不糊
+- 图片一律**深色字 + 透明底**，不跟主题走：它的归宿是白纸文档，深色主题下浅色字粘过去等于看不见。深色主题里给 `img` 垫一层白（`background` + `box-shadow` 外扩，两者都不参与布局，基线不会被推歪）
+- 高度依赖 `em` 参数，所以**换字号要重转**（`applyFontSize` 里会 `flushRender`）；同一公式同字号命中缓存，上限 512 条
+- 转换是异步的，`doRender` 要 `await renderMath(...)` 之后才重建滚动锚点——图片是后插进来的，高度会再变一次
+- 转图失败就保留 KaTeX 的矢量渲染：宁可不好粘，也不能让公式消失
+
+踩过的坑：**千万别给 `.math-img` 加 `user-select: none`**。Chromium 会把不可选中的节点整个排除出复制内容——HTML 剪贴板里连 `<img>` 标签都没有，公式位置只剩两个空 `<span>`。防拖拽用 `-webkit-user-drag: none` 就够了。这个 bug 只有真去读剪贴板才发现：页面上一切正常。
+
 ### 版本号
 
 只有一个来源：`package.json` 的 `version`。其余三处都以它为基准对齐——`src-tauri/tauri.conf.json`（关于页显示、安装包版本）、`src-tauri/Cargo.toml`（exe 的 `FileVersion`）、前端 `APP_VERSION`（构建期由 `vite.config.ts` 的 `define` 注入，不再手写）。`verify_about.py` 直接读 `package.json` 断言界面徽标和 exe 的 `FileVersion` 都等于它，所以「改了版本号忘了重新构建」会被测试当场抓住。
@@ -196,7 +214,7 @@ AI 出的是白底 RGB 图，四角圆角还不一致。处理流程在 `src-tau
 
 ## 回归测试
 
-`tests/` 下 8 个脚本，**只依赖 Python 标准库**，直接驱动真实 exe：用 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=…` 启动，再用一个 200 行的 CDP 客户端 `Runtime.evaluate` 驱动 DOM；窗口行为用 Win32 `SendInput` / `GetWindowRect`。
+`tests/` 下 9 个脚本，**只依赖 Python 标准库**，直接驱动真实 exe：用 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=…` 启动，再用一个 200 行的 CDP 客户端 `Runtime.evaluate` 驱动 DOM；窗口行为用 Win32 `SendInput` / `GetWindowRect`。
 
 | 脚本 | 覆盖 | 用例 |
 | --- | --- | --- |
@@ -208,8 +226,9 @@ AI 出的是白底 RGB 图，四角圆角还不一致。处理流程在 `src-tau
 | `regression_win.py` | 标题栏拖动、边缘缩放、最小化、最大化、关闭 | 20 |
 | `regression_dialog.py` | `Ctrl+S` / `Ctrl+Shift+S` 另存为落盘、`Ctrl+O` 打开对话框 | 16 |
 | `plaintext.py` | 两个入口的菜单位置、纯文本逐项去标记、选区只转选区、导出 .txt 与剪贴板逐字节一致且不改绑标签 | 61 |
+| `mathimg.py` | 「公式转图」勾选框位置与持久化、5 类公式全部转 PNG、位图 3 倍像素与透明底、行内基线对齐、深色主题垫白、复制到剪贴板的 HTML 里带 data URI | 33 |
 
-合计 361 项。跑之前确认没有别的 pyMD 实例在跑——同一个 WebView2 用户数据目录被两个实例用不同参数挂载会直接 panic。
+合计 394 项。跑之前确认没有别的 pyMD 实例在跑——同一个 WebView2 用户数据目录被两个实例用不同参数挂载会直接 panic。
 
 ## 已知限制
 

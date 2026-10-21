@@ -1,7 +1,7 @@
 {
   "name": "pymd",
   "private": true,
-  "version": "0.4.0",
+  "version": "0.5.0",
   "type": "module",
   "description": "pyMD - a lightweight Markdown viewer and editor built with Tauri 2 + CodeMirror 6",
   "scripts": {
@@ -23,7 +23,8 @@
     "@lezer/highlight": "^1.2.0",
     "@tauri-apps/api": "^2.0.0",
     "@tauri-apps/plugin-dialog": "^2.0.0",
-    "katex": "^0.19.0"
+    "katex": "^0.19.0",
+    "mathjax-full": "^3.2.2"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.0.0",

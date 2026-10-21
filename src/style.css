@@ -805,6 +805,23 @@ button:active { transform: translateY(1px); }
 /* 语法错误的公式：KaTeX 用 errorColor 标红，这里再加个淡底便于发现 */
 .katex .katex-error { background: rgba(207, 34, 46, 0.08); border-radius: 3px; }
 
+/* ------------------------- 公式转图（PNG 位图） ------------------------- */
+/* 图片是「深色字 + 透明底」，因为它的用途是被粘到白纸文档里，
+   不能跟随深色主题——否则浅色字粘到 Word 里等于看不见。 */
+/* 注意：**不要**给 .math-img 加 user-select: none。Chromium 会把不可选中的节点
+   整个排除出复制内容，图片就粘不到任何地方了（实测 HTML 剪贴板里连 <img> 都没有）。
+   防拖拽只需要 -webkit-user-drag。 */
+.math-img { -webkit-user-drag: none; height: auto; }
+/* 深色主题下给图垫一层白：background 盖住图片框内，box-shadow 补一圈外扩，
+   两者都不参与布局，公式基线因此不会被推歪 */
+html[data-theme="dark"] .math-img {
+  background: #fff;
+  border-radius: 2px;
+  box-shadow: 0 0 0 3px #fff;
+}
+/* 块级公式的图片要自己居中：.math-display 的 text-align 对 img 不生效 */
+.math-display.math-img { margin-left: auto; margin-right: auto; }
+
 /* --------------------------- 关于/快捷键 --------------------------- */
 #info-dialog {
   width: min(460px, 82vw);

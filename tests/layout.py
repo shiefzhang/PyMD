@@ -214,7 +214,7 @@ def main():
                    })()""",
             )
         )
-        check("工具栏分六组（视图切换 + 硬换行开关）", tb["groups"], 6)
+        check("工具栏分七组（视图切换 + 硬换行开关 + 公式转图）", tb["groups"], 7)
         check("目录 → 新建 拉开距离", tb["outlineNew"], 14)
         check("另存为 → 查找 拉开距离", tb["saveasFind"], 14)
         check("组内间距保持紧凑", [tb["sidebarOutline"], tb["newOpen"], tb["findReplace"]], [4, 4, 4])

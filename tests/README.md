@@ -1,6 +1,6 @@
 # pyMD 回归测试
 
-八个脚本，直接驱动真实 exe。不依赖 pytest / selenium / playwright，只用 Python 标准库。
+九个脚本，直接驱动真实 exe。不依赖 pytest / selenium / playwright，只用 Python 标准库。
 
 ## 前置
 
@@ -22,6 +22,7 @@ python layout.py             # 界面布局专项，41 项
 python verify_icon.py        # 图标链路（含从 exe 里抠图标），20 项
 python sync.py               # 分屏滚动联动 + 单换行渲染，22 项
 python plaintext.py          # 纯文本导出（复制 / 另存 .txt），61 项
+python mathimg.py            # 公式转 PNG（MathJax → 位图 / 复制），33 项
 ```
 
 `layout.py` 会真的在 `D:\tmp\pymd_layoutdir` 造 40 多个文件，把侧边栏列表撑长，
@@ -41,7 +42,7 @@ python plaintext.py          # 纯文本导出（复制 / 另存 .txt），61 �
 | 读编辑器状态 | `window.__pymd`（只在 `localStorage.pymd-debug === "1"` 时挂出），能拿到完整 `EditorState`，包括没渲染到 DOM 的长文档 |
 | 原生对话框 | 对话框在 WebView 之外，只能用 `SendInput` 往文件名框打完整路径再回车 |
 | 窗口行为 | `GetWindowRect` / `IsIconic` / `IsZoomed` 读真实窗口状态；拖动和缩放用 `SendInput` 模拟鼠标 |
-| 剪贴板断言 | `verify_about.py` / `plaintext.py` 用 `OpenClipboard` / `GetClipboardData` 直接读系统剪贴板，验证内容真的落到了剪贴板（`GetClipboardData` 的 `restype` 必须声明成 `c_void_p`，否则 64 位句柄被截断，读出来永远是空） |
+| 剪贴板断言 | `verify_about.py` / `plaintext.py` / `mathimg.py` 用 `OpenClipboard` / `GetClipboardData` 直接读系统剪贴板，验证内容真的落到了剪贴板（`GetClipboardData` 的 `restype` 必须声明成 `c_void_p`，否则 64 位句柄被截断，读出来永远是空） |
 | exe 图标断言 | `verify_icon.py` 用 `shell32.ExtractIconExW` 把 exe 资源段里的图标抠出来（注意：这个 API 在 shell32，不在 user32），再用 `DrawIconEx` 画进 DIB 读回 RGBA，和 `icons/32x32.png` 比对 |
 
 为什么不用模拟鼠标点界面：无边框窗口的坐标随 DPI 和窗口位置变，且 `SetForegroundWindow` 会静默失败，

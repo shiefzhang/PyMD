@@ -77,6 +77,7 @@ const LS = {
   tabs: "pymd-tabs",
   outline: "pymd-outline",
   hardbreaks: "pymd-hardbreaks",
+  mathimg: "pymd-mathimg",
 };
 
 const MAX_RECENT = 10;
@@ -131,6 +132,12 @@ if (!Number.isFinite(fontSize)) fontSize = FONT_DEFAULT;
 
 /** 段内单个换行是否硬换行（comrak render.hardbreaks）。默认开。 */
 let hardbreaks = localStorage.getItem(LS.hardbreaks) !== "0";
+
+/**
+ * 公式是否转成图片。默认关——关着才是矢量渲染，清晰度最好；
+ * 只有要把内容粘到 Word / 微信这类不认 KaTeX 的软件时才需要打开。
+ */
+let mathAsImage = localStorage.getItem(LS.mathimg) === "1";
 
 const MD_FILTER = [{ name: "Markdown", extensions: ["md", "markdown", "mdx", "txt"] }];
 
@@ -415,10 +422,14 @@ async function doRender(): Promise<void> {
       node.dataset.hi = String(index);
     });
 
-    // comrak 只标出了公式边界，实际排版在这里做
-    renderMath(previewEl);
+    // comrak 只标出了公式边界，实际排版在这里做。
+    // 勾了「公式转图」时会异步把排好的公式换成位图，所以要等它回来再量高度。
+    await renderMath(previewEl, { asImage: mathAsImage, fontPx: fontSize });
 
-    // 公式排版会改高度，锚点必须在它之后重建
+    // 渲染期间又改了文档 / 切了标签：这次的结果已经过期，别去改锚点和状态栏
+    if (seq !== renderSeq) return;
+
+    // 公式排版（以及转图后的替换）会改高度，锚点必须在它之后重建
     rebuildSyncAnchors();
 
     const current = activeTab() ?? tab;
@@ -791,6 +802,22 @@ function setupHardbreaks(): void {
   });
 }
 
+/** 「公式转图」勾选框：开了就重排一遍，把公式换成位图。 */
+function setupMathImage(): void {
+  const box = el<HTMLInputElement>("chk-mathimg");
+  box.checked = mathAsImage;
+  box.addEventListener("change", () => {
+    mathAsImage = box.checked;
+    localStorage.setItem(LS.mathimg, mathAsImage ? "1" : "0");
+    flashStatus(
+      mathAsImage
+        ? "公式已转为图片：可直接粘到 Word / 微信 / 邮件"
+        : "公式恢复矢量渲染（最清晰）",
+    );
+    void flushRender();
+  });
+}
+
 /* ------------------------------ 字号缩放 ------------------------------ */
 function applyFontSize(next: number): void {
   fontSize = Math.min(FONT_MAX, Math.max(FONT_MIN, Math.round(next)));
@@ -798,6 +825,8 @@ function applyFontSize(next: number): void {
   localStorage.setItem(LS.font, String(fontSize));
   // 字号变了行高跟着变，CodeMirror 需要重新测量
   editor.requestMeasure();
+  // 图片是按字号烘死的像素，字号一变就得重转，否则和正文对不上
+  if (mathAsImage) void flushRender();
 }
 
 function zoomIn(): void {
@@ -1864,6 +1893,7 @@ async function boot(): Promise<void> {
   applyFontSize(fontSize);
   setupTheme();
   setupHardbreaks();
+  setupMathImage();
   // 左上角图标与关于页共用同一份打包资源
   titlebarIconEl.src = appIconUrl;
   buildMenus();

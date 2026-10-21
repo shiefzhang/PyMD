@@ -433,7 +433,7 @@ def main():
     check("菜单在图标之后（不再贴窗口最左）", lay["menuLeft"] >= 25, True)
     check("文件名起点在菜单右侧", lay["titleLeft"] >= lay["menuRight"], True)
     check("文件名与菜单有竖线分隔", lay["titleBorder"], "1px")
-    check("工具栏分六组（含视图切换与硬换行开关）", lay["groups"], 6)
+    check("工具栏分七组（视图切换、硬换行、公式转图各占一块）", lay["groups"], 7)
     check("视图切换并进工具栏", lay["navInToolbar"], True)
     check("视图切换在「替换」右边", lay["navRightOfReplace"], True)
     check("视图切换自己是一块胶囊", lay["navIsCapsule"], True)

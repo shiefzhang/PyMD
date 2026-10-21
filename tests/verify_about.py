@@ -74,7 +74,7 @@ def exe_field(path, key):
 
 
 def ver_tuple(text):
-    """`0.4.0` / `0.4.0.0` 都归一成 (0, 4) 再比，免得被尾部补零坑到。"""
+    """`0.5.0` / `0.5.0.0` 都归一成 (0, 5) 再比，免得被尾部补零坑到。"""
     parts = []
     for piece in (text or "").split("."):
         try:
