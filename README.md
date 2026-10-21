@@ -22,6 +22,7 @@
 - 多文件标签页：每个标签独立的缓冲、撤销栈、选区和滚动位置；重启后恢复上次打开的已保存文件
 - 查找替换（`Ctrl+F` / `Ctrl+H`）：全部匹配高亮，当前项加描边，替换后报数
 - 字号 12–22 px 缩放，编辑器与预览同步
+- **整页缩放** 50%–300%：工具栏、侧边栏、状态栏一起变，等同浏览器的 `Ctrl+滚轮`；和字号缩放互不干扰，状态栏只在非 100% 时露出倍率（点一下复位）
 - 段内单个换行是否算换行，可用工具栏的**硬换行**勾选框切换（[见下](#关于硬换行)）
 
 **渲染**
@@ -73,6 +74,7 @@ Windows 10 / 11，需要 **WebView2 运行时**（Win11 自带，Win10 多半也
 | 文本 / 分屏 / 预览 | `Ctrl+1` / `Ctrl+2` / `Ctrl+3`，`Ctrl+E` 循环 |
 | 侧边栏 / 文档目录 | `Ctrl+B` / `Ctrl+Shift+O` |
 | 放大 / 缩小 / 重置字号 | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` |
+| 放大 / 缩小 / 重置整页 | `Ctrl+Shift+=` / `Ctrl+Shift+-` / `Ctrl+Shift+0`，或 `Ctrl+滚轮` |
 
 ## 从源码构建
 
@@ -200,6 +202,26 @@ CommonMark 规定段落内的单个换行是 softbreak，渲染成空格。中�
 
 踩过的坑：**千万别给 `.math-img` 加 `user-select: none`**。Chromium 会把不可选中的节点整个排除出复制内容——HTML 剪贴板里连 `<img>` 标签都没有，公式位置只剩两个空 `<span>`。防拖拽用 `-webkit-user-drag: none` 就够了。这个 bug 只有真去读剪贴板才发现：页面上一切正常。
 
+### 页面缩放
+
+这里有**两套**缩放，别混：**字号缩放**（`Ctrl+=`）只改 `--fs`，影响正文与预览的排版；**整页缩放**（`Ctrl+Shift+=` / `Ctrl+滚轮`）连工具栏、侧边栏、状态栏一起变，等同浏览器的页面缩放。
+
+整页缩放没有去动 CSS，而是调 WebView 自己的 zoom（Rust 侧 `set_webview_zoom` → `WebviewWindow::set_zoom`）。原因：
+
+- 改 CSS 的话得把全站 px 改成 rem，改动面太大；
+- 给根节点挂 `zoom` 会让 CodeMirror 的布局测量、鼠标坐标、滚动位置全部进入缩放坐标系，是自找麻烦。
+
+WebView 的 zoom 是**渲染层**缩放：DOM 里的一切仍然是 100% 的 px，工具栏高还是 40px，只是最后放大显示。编辑器完全不用改。
+
+几个实现细节：
+
+- 倍率统一收到 1/20 的整数倍：`0.1` 的步进在二进制浮点里存不准（`1 + 0.1 + 0.1 = 1.3000000000000003`），不收敛的话倍数会越加越歪
+- Rust 侧再夹一次 0.5–3.0，并把夹紧后的值返回给前端——以**实际生效**的倍率为准，避免状态栏写 300% 实际是 500%
+- `Ctrl+滚轮` 必须 `passive: false` 且 `preventDefault()`：否则 WebView2 自己的缩放也会同时生效，一次滚轮跳两档。滚轮 delta 先累加到阈值再走一步，触控板轻轻一划不会连跳
+- 快捷键分不清 `=` 和 `Shift+=`（按住 Shift 时 `event.key` 已经变成 `+`），只能看 `event.code`
+
+状态栏的倍率**只在非 100% 时出现**，点一下复位。测试断言不看这个文字——前端自己写的文字就算 invoke 失败了也会显示——而是看 `window.innerWidth`：100% 时是 W，110% 时必须是约 `W/1.1`，这样才证明真的缩放了渲染层，而不只是改了状态栏。
+
 ### 版本号
 
 只有一个来源：`package.json` 的 `version`。其余三处都以它为基准对齐——`src-tauri/tauri.conf.json`（关于页显示、安装包版本）、`src-tauri/Cargo.toml`（exe 的 `FileVersion`）、前端 `APP_VERSION`（构建期由 `vite.config.ts` 的 `define` 注入，不再手写）。`verify_about.py` 直接读 `package.json` 断言界面徽标和 exe 的 `FileVersion` 都等于它，所以「改了版本号忘了重新构建」会被测试当场抓住。
@@ -214,7 +236,7 @@ AI 出的是白底 RGB 图，四角圆角还不一致。处理流程在 `src-tau
 
 ## 回归测试
 
-`tests/` 下 9 个脚本，**只依赖 Python 标准库**，直接驱动真实 exe：用 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=…` 启动，再用一个 200 行的 CDP 客户端 `Runtime.evaluate` 驱动 DOM；窗口行为用 Win32 `SendInput` / `GetWindowRect`。
+`tests/` 下 10 个脚本，**只依赖 Python 标准库**，直接驱动真实 exe：用 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=…` 启动，再用一个 200 行的 CDP 客户端 `Runtime.evaluate` 驱动 DOM；窗口行为用 Win32 `SendInput` / `GetWindowRect`。
 
 | 脚本 | 覆盖 | 用例 |
 | --- | --- | --- |
@@ -227,8 +249,9 @@ AI 出的是白底 RGB 图，四角圆角还不一致。处理流程在 `src-tau
 | `regression_dialog.py` | `Ctrl+S` / `Ctrl+Shift+S` 另存为落盘、`Ctrl+O` 打开对话框 | 16 |
 | `plaintext.py` | 两个入口的菜单位置、纯文本逐项去标记、选区只转选区、导出 .txt 与剪贴板逐字节一致且不改绑标签 | 61 |
 | `mathimg.py` | 「公式转图」勾选框位置与持久化、5 类公式全部转 PNG、位图 3 倍像素与透明底、行内基线对齐、深色主题垫白、复制到剪贴板的 HTML 里带 data URI | 33 |
+| `zoom.py` | 整页缩放：菜单 / 快捷键 / `Ctrl+滚轮` 三条入口、`innerWidth` 证明渲染层真的缩放、50%–300% 夹紧、与字号缩放互不干扰、状态栏复位、重启保留 | 27 |
 
-合计 394 项。跑之前确认没有别的 pyMD 实例在跑——同一个 WebView2 用户数据目录被两个实例用不同参数挂载会直接 panic。
+合计 421 项。跑之前确认没有别的 pyMD 实例在跑——同一个 WebView2 用户数据目录被两个实例用不同参数挂载会直接 panic。
 
 ## 已知限制
 

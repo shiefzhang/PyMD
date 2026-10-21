@@ -788,6 +788,23 @@ fn clipboard_write(text: String) -> CmdResult<()> {
     clipboard::write_text(&text)
 }
 
+/// 整页缩放（等同浏览器的 Ctrl+滚轮），`scale` 是相对 100% 的倍数。
+///
+/// 为什么交给 WebView 而不是改 CSS：整页缩放要连工具栏、侧边栏、状态栏一起变大，
+/// 用 CSS 得把全站 px 改成 rem，或者给根节点挂 `zoom` —— 后者会让 CodeMirror
+/// 的布局测量、鼠标坐标、滚动位置全部进入缩放坐标系，是自找麻烦。
+/// WebView 的 zoom 是**渲染层**缩放：DOM 里的一切仍然是 100% 的 px，只是最后放大显示，
+/// 编辑器的坐标系统和命中测试完全不用改。
+///
+/// 返回值是夹紧后的实际倍率，前端拿它回写状态栏，避免「界面上写 240% 实际是 300%」。
+#[tauri::command]
+fn set_webview_zoom(window: tauri::WebviewWindow, scale: f64) -> CmdResult<f64> {
+    // 0.5 倍再往下工具栏就没法点了；3 倍以上单行能占满整屏
+    let scale = if scale.is_finite() { scale.clamp(0.5, 3.0) } else { 1.0 };
+    window.set_zoom(scale).map_err(|e| e.to_string())?;
+    Ok(scale)
+}
+
 // ---------------------------------------------------------------------------
 // 入口
 // ---------------------------------------------------------------------------
@@ -805,6 +822,7 @@ pub fn run() {
             list_dir,
             clipboard_read,
             clipboard_write,
+            set_webview_zoom,
             watch_document,
         ])
         .run(tauri::generate_context!())

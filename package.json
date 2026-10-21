@@ -1,7 +1,7 @@
 {
   "name": "pymd",
   "private": true,
-  "version": "0.5.0",
+  "version": "0.6.0",
   "type": "module",
   "description": "pyMD - a lightweight Markdown viewer and editor built with Tauri 2 + CodeMirror 6",
   "scripts": {

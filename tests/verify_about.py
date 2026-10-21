@@ -197,7 +197,8 @@ try:
     check("快捷键标题", sc["title"], "快捷键说明")
     check("快捷键正文恢复 pre-wrap", sc["ws"], "pre-wrap")
     check("没有残留 about 节点", sc["about"], 0)
-    check("快捷键行数", sc["text"], 18)
+    # 22 = 原有 18 条 + 页面缩放 4 条（放大 / 缩小 / 重置 / Ctrl+滚轮）
+    check("快捷键行数", sc["text"], 22)
     c.shot(os.path.join(OUT, "shortcuts.png"), scale=1)
 
     # 7) 菜单里不该出现单独的「版权信息」项

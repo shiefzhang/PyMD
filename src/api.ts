@@ -65,4 +65,9 @@ export const clipboardRead = () => invoke<string>("clipboard_read");
 
 export const clipboardWrite = (text: string) => invoke<void>("clipboard_write", { text });
 
+/**
+ * 整页缩放（WebView 渲染层缩放，不是改字号）。返回夹紧到 0.5–3.0 后的实际倍率。
+ */
+export const setZoom = (scale: number) => invoke<number>("set_webview_zoom", { scale });
+
 export const appInfo = () => invoke<string>("app_info");

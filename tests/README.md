@@ -1,6 +1,6 @@
 # pyMD 回归测试
 
-九个脚本，直接驱动真实 exe。不依赖 pytest / selenium / playwright，只用 Python 标准库。
+十个脚本，直接驱动真实 exe。不依赖 pytest / selenium / playwright，只用 Python 标准库。
 
 ## 前置
 
@@ -23,6 +23,7 @@ python verify_icon.py        # 图标链路（含从 exe 里抠图标），20 �
 python sync.py               # 分屏滚动联动 + 单换行渲染，22 项
 python plaintext.py          # 纯文本导出（复制 / 另存 .txt），61 项
 python mathimg.py            # 公式转 PNG（MathJax → 位图 / 复制），33 项
+python zoom.py               # 整页缩放（菜单 / 快捷键 / Ctrl+滚轮），27 项
 ```
 
 `layout.py` 会真的在 `D:\tmp\pymd_layoutdir` 造 40 多个文件，把侧边栏列表撑长，

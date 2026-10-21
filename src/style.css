@@ -681,6 +681,17 @@ button:active { transform: translateY(1px); }
 }
 #status-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 60%; }
 #status-dirty { color: var(--accent); }
+/* 页面缩放倍率：只在非 100% 时露出来，点一下回 100% */
+#status-zoom {
+  padding: 0 6px;
+  border-radius: 4px;
+  color: var(--accent);
+  background: var(--group-active);
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+#status-zoom:hover { filter: brightness(0.94); }
+#status-zoom[hidden] { display: none; }
 
 /* --------------------------- CodeMirror --------------------------- */
 #editor-pane .cm-editor { height: 100%; background: var(--bg); color: var(--text); }

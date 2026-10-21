@@ -78,6 +78,7 @@ const LS = {
   outline: "pymd-outline",
   hardbreaks: "pymd-hardbreaks",
   mathimg: "pymd-mathimg",
+  zoom: "pymd-zoom",
 };
 
 const MAX_RECENT = 10;
@@ -85,6 +86,12 @@ const MD_EXT = /\.(md|markdown|mdx|txt)$/i;
 const FONT_MIN = 12;
 const FONT_MAX = 22;
 const FONT_DEFAULT = 14;
+
+/* 页面缩放（整页，含工具栏/侧边栏）。和字号是两套：字号只改正文与预览的排版。 */
+const PAGE_ZOOM_MIN = 0.5;
+const PAGE_ZOOM_MAX = 3;
+const PAGE_ZOOM_DEFAULT = 1;
+const PAGE_ZOOM_STEP = 0.1;
 
 interface RecentFile {
   path: string;
@@ -129,6 +136,12 @@ if (!Number.isFinite(splitRatio) || splitRatio < 0.15 || splitRatio > 0.85) spli
 
 let fontSize = Number(localStorage.getItem(LS.font) ?? String(FONT_DEFAULT));
 if (!Number.isFinite(fontSize)) fontSize = FONT_DEFAULT;
+
+/** 整页缩放倍率（1 = 100%）。和字号是两件事，见 applyPageZoom。 */
+let pageZoom = Number(localStorage.getItem(LS.zoom) ?? String(PAGE_ZOOM_DEFAULT));
+if (!Number.isFinite(pageZoom) || pageZoom < PAGE_ZOOM_MIN || pageZoom > PAGE_ZOOM_MAX) {
+  pageZoom = PAGE_ZOOM_DEFAULT;
+}
 
 /** 段内单个换行是否硬换行（comrak render.hardbreaks）。默认开。 */
 let hardbreaks = localStorage.getItem(LS.hardbreaks) !== "0";
@@ -844,6 +857,82 @@ function zoomReset(): void {
   flashStatus(`字号 ${fontSize}px（默认）`);
 }
 
+/* ------------------------------ 页面缩放 ------------------------------ */
+/**
+ * 整页缩放：工具栏、侧边栏、状态栏一起变大，等同浏览器的 Ctrl+滚轮。
+ *
+ * 和上面的「字号缩放」是两套，别混：
+ * - 字号缩放只改 `--fs`，只影响正文与预览的排版
+ * - 页面缩放交给 WebView 的渲染层（Rust 侧 `set_webview_zoom`），
+ *   DOM 里的一切仍然是 100% 的 px，编辑器坐标和命中测试不用跟着改
+ */
+function zoomPercent(): string {
+  return `${Math.round(pageZoom * 100)}%`;
+}
+
+/** 状态栏只在非 100% 时露出倍率，避免常驻一个「100%」占地方。 */
+function updateZoomChip(): void {
+  const chip = el("status-zoom");
+  chip.textContent = zoomPercent();
+  chip.hidden = Math.abs(pageZoom - PAGE_ZOOM_DEFAULT) < 0.001;
+  chip.title = `页面缩放 ${zoomPercent()}，点击恢复 100%`;
+}
+
+async function applyPageZoom(next: number): Promise<void> {
+  // 0.1 的步进在二进制浮点里存不准（1+0.1+0.1 = 1.3000000000000003），
+  // 统一收到 1/20 的整数倍，倍数就不会越加越歪
+  const target = Math.min(PAGE_ZOOM_MAX, Math.max(PAGE_ZOOM_MIN, Math.round(next * 20) / 20));
+  pageZoom = target;
+  localStorage.setItem(LS.zoom, String(target));
+  try {
+    // Rust 侧会再夹一次，返回实际生效的倍率——以它为准，免得分屏显示和实际不一致
+    pageZoom = await api.setZoom(target);
+  } catch (err) {
+    // 纯浏览器里调试时没有 Tauri 后端，保留本地值即可
+    console.warn("设置页面缩放失败:", err);
+  }
+  updateZoomChip();
+}
+
+function pageZoomIn(): void {
+  void applyPageZoom(pageZoom + PAGE_ZOOM_STEP).then(() =>
+    flashStatus(`页面缩放 ${zoomPercent()}`),
+  );
+}
+
+function pageZoomOut(): void {
+  void applyPageZoom(pageZoom - PAGE_ZOOM_STEP).then(() =>
+    flashStatus(`页面缩放 ${zoomPercent()}`),
+  );
+}
+
+function pageZoomReset(): void {
+  void applyPageZoom(PAGE_ZOOM_DEFAULT).then(() => flashStatus("页面缩放 100%（默认）"));
+}
+
+function setupPageZoom(): void {
+  updateZoomChip();
+  el("status-zoom").addEventListener("click", () => void applyPageZoom(PAGE_ZOOM_DEFAULT));
+
+  // Ctrl+滚轮。Chromium 里鼠标滚轮一格 deltaY 通常正好 100，触控板是连续小值，
+  // 所以先累加到阈值再走一步：否则触控板轻轻一划就跳好几档。
+  // 必须 passive: false —— 不 preventDefault 的话 WebView2 自己的缩放也会同时生效，变成双倍。
+  let wheelAcc = 0;
+  window.addEventListener(
+    "wheel",
+    (event) => {
+      if (!(event.ctrlKey || event.metaKey)) return;
+      event.preventDefault();
+      wheelAcc += event.deltaY;
+      if (Math.abs(wheelAcc) < 50) return;
+      const step = wheelAcc < 0 ? PAGE_ZOOM_STEP : -PAGE_ZOOM_STEP;
+      wheelAcc = 0;
+      void applyPageZoom(pageZoom + step);
+    },
+    { passive: false },
+  );
+}
+
 /* ----------------------------- 视图切换 ----------------------------- */
 /**
  * 分屏比例。
@@ -1287,6 +1376,9 @@ type ActionId =
   | "zoomIn"
   | "zoomOut"
   | "zoomReset"
+  | "pageZoomIn"
+  | "pageZoomOut"
+  | "pageZoomReset"
   | "about"
   | "shortcuts";
 
@@ -1345,6 +1437,10 @@ const MENUS: Array<{ key: string; label: string; items: MenuItem[] }> = [
       { label: "放大字体", action: "zoomIn", shortcut: "Ctrl+=" },
       { label: "缩小字体", action: "zoomOut", shortcut: "Ctrl+-" },
       { label: "重置字体大小", action: "zoomReset", shortcut: "Ctrl+0" },
+      null,
+      { label: "放大页面", action: "pageZoomIn", shortcut: "Ctrl+Shift+=" },
+      { label: "缩小页面", action: "pageZoomOut", shortcut: "Ctrl+Shift+-" },
+      { label: "重置页面缩放", action: "pageZoomReset", shortcut: "Ctrl+Shift+0" },
     ],
   },
   {
@@ -1487,6 +1583,10 @@ const SHORTCUT_TEXT = [
   `Ctrl+=   放大字体`,
   `Ctrl+-   缩小字体`,
   `Ctrl+0   重置字体大小`,
+  `Ctrl+Shift+=   放大页面（整页，连工具栏一起）`,
+  `Ctrl+Shift+-   缩小页面`,
+  `Ctrl+Shift+0   重置页面缩放`,
+  `Ctrl+滚轮      页面缩放`,
   `Esc      关闭查找栏 / 菜单`,
 ].join("\n");
 
@@ -1552,6 +1652,9 @@ const actions: Record<ActionId, () => void | Promise<void>> = {
   zoomIn,
   zoomOut,
   zoomReset,
+  pageZoomIn,
+  pageZoomOut,
+  pageZoomReset,
   about: () => showAbout(),
   shortcuts: () => showInfo("快捷键说明", SHORTCUT_TEXT),
 };
@@ -1876,15 +1979,20 @@ function setupShortcuts(): void {
     } else if (key === "e") {
       event.preventDefault();
       cycleView();
-    } else if (key === "=" || key === "+") {
+    } else if (event.code === "Equal" || key === "=" || key === "+") {
+      // 单独按 = 是放大字体，Shift+= 是放大整页。
+      // 分不清是因为按住 Shift 时 key 已经变成 "+" 了，只能看 event.code。
       event.preventDefault();
-      zoomIn();
-    } else if (key === "-") {
+      if (event.shiftKey) pageZoomIn();
+      else zoomIn();
+    } else if (event.code === "Minus" || key === "-" || key === "_") {
       event.preventDefault();
-      zoomOut();
-    } else if (key === "0") {
+      if (event.shiftKey) pageZoomOut();
+      else zoomOut();
+    } else if (event.code === "Digit0" || event.code === "Numpad0" || key === "0" || key === ")") {
       event.preventDefault();
-      zoomReset();
+      if (event.shiftKey) pageZoomReset();
+      else zoomReset();
     }
   });
 }
@@ -1894,6 +2002,10 @@ async function boot(): Promise<void> {
   setupTheme();
   setupHardbreaks();
   setupMathImage();
+  setupPageZoom();
+  // 恢复上次的整页缩放。放最后：先把界面按 100% 建起来，再一次性缩放，
+  // 免得几个组件在缩放态下各自测量一遍
+  void applyPageZoom(pageZoom);
   // 左上角图标与关于页共用同一份打包资源
   titlebarIconEl.src = appIconUrl;
   buildMenus();

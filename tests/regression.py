@@ -770,7 +770,8 @@ def main():
     snap = menu_snapshot(cdp)
     check("查看菜单项", [i["label"] for i in snap["items"]],
           ["文本模式", "左右模式", "预览模式", "显示/隐藏侧边栏", "显示/隐藏目录",
-           "放大字体", "缩小字体", "重置字体大小"])
+           "放大字体", "缩小字体", "重置字体大小",
+           "放大页面", "缩小页面", "重置页面缩放"])
     open_menu(cdp, "帮助")
     snap = menu_snapshot(cdp)
     check("帮助菜单项", [i["label"] for i in snap["items"]], ["关于 pyMD", "快捷键说明"])
